@@ -39,8 +39,7 @@ writes it once into .NET WASM's in-memory filesystem.
 
 ### Boogie solver boundary
 
-The proposed new `ISmtTransport` is not necessary. Boogie already has the right
-abstraction:
+No new transport abstraction is needed. Boogie already has the right one:
 
 - `Source/Provers/SMTLib/SMTLibSolver.cs:8`: abstract transport with `Send`,
   `SendRequest`, `SendRequestsAndCloseInput`, `PingPong`, and `Close`.
@@ -157,14 +156,15 @@ managed-thread stacks, but the required examples complete with the current
   - `Bad`: not verified, 0 verified, 1 real postcondition diagnostic.
   - transcript assertions confirm options, push, check-sat, `unsat` for `Abs`,
     and `sat` for `Bad`.
-  - a larger multi-method regression file reaches verification, verifies 42
-    implementations, reports the four real errors left by its two TODO proof
-    bodies, and records 250 SMT exchanges (no runtime diagnostic).
+  - a larger multi-method regression file (not included in this repo) reaches
+    verification, verifies 42 implementations, reports the four real errors
+    left by its two TODO proof bodies, and records 250 SMT exchanges (no
+    runtime diagnostic).
 - Static server smoke test: HTML and the 33 MB Z3 WASM return HTTP 200 with the
   required COOP/COEP/CORP headers.
-- Not observed: an interactive graphical browser run, because the available
-  in-app browser provider reported no browser instance. No alternate browser
-  automation was substituted.
+- An interactive graphical-browser run was not possible in the original
+  investigation environment; it has since been confirmed on the deployed
+  GitHub Pages demo, including the first-visit cold load.
 
 ## Smallest change set and blocker classification
 
