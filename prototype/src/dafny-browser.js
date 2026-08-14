@@ -28,7 +28,12 @@ function resolveBaseUrl(baseUrl) {
  *
  * @param {{
  *   baseUrl?: string | URL,
- *   workerFactory?: (workerUrl: URL) => Worker
+ *   workerFactory?: (workerUrl: URL) => Worker,
+ *   onProgress?: (progress: {
+ *     stage: string,
+ *     loadedBytes: number,
+ *     totalBytes: number
+ *   }) => void
  * }} options
  */
 export async function createDafny(options = {}) {
@@ -71,6 +76,14 @@ export async function createDafny(options = {}) {
     if (message?.type === "ready") {
       ready = true;
       resolveStartup();
+      return;
+    }
+    if (message?.type === "progress") {
+      try {
+        options.onProgress?.(message.detail);
+      } catch {
+        // Progress display failures must not break verification.
+      }
       return;
     }
     if (message?.type === "startup-error") {

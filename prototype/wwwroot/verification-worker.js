@@ -5,6 +5,67 @@ importScripts("./z3/z3-built.js");
 
 const contexts = new Map();
 
+// Approximate first-visit download: ~35 MB of .NET runtime + assemblies plus
+// the ~34 MB Z3 WASM. Only used to scale the progress bar; the byte counter
+// shown to the user is exact.
+const TOTAL_DOWNLOAD_BYTES = 70 * 1024 * 1024;
+let downloadedBytes = 0;
+let progressStage = "Starting…";
+let lastReported = 0;
+
+function reportProgress(stage) {
+  progressStage = stage ?? progressStage;
+  lastReported = downloadedBytes;
+  self.postMessage({
+    type: "progress",
+    detail: {
+      stage: progressStage,
+      loadedBytes: downloadedBytes,
+      totalBytes: TOTAL_DOWNLOAD_BYTES
+    }
+  });
+}
+
+// Streams a response while counting its (decompressed) bytes toward the
+// progress total, reporting at most every 512 KB. Any failure in the counting
+// wrapper falls back to an ordinary fetch — progress display must never be
+// able to break loading.
+async function fetchCounted(url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok || !response.body) {
+      return response;
+    }
+    const counting = new TransformStream({
+      transform(chunk, controller) {
+        downloadedBytes += chunk.byteLength;
+        if (downloadedBytes - lastReported >= 512 * 1024) {
+          reportProgress();
+        }
+        controller.enqueue(chunk);
+      }
+    });
+    return new Response(response.body.pipeThrough(counting), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+  } catch {
+    return fetch(url);
+  }
+}
+
+// Resource types that the .NET loader must receive as URLs rather than
+// Response objects (scripts are loaded via import/importScripts).
+const uncountedResourceTypes = new Set(["dotnetjs", "js-module-threads", "manifest", "configuration"]);
+
+function loadBootResource(type, name, defaultUri) {
+  if (uncountedResourceTypes.has(type) || name.endsWith(".js") || name.endsWith(".mjs")) {
+    return undefined;
+  }
+  return fetchCounted(defaultUri);
+}
+
 async function start() {
   if (!crossOriginIsolated) {
     throw new Error(
@@ -17,13 +78,24 @@ async function start() {
     import("./_framework/dotnet.js")
   ]);
 
+  // Warm the HTTP cache for the Z3 WASM with a counted fetch; Emscripten's own
+  // request below is then served from cache.
+  const z3WasmUrl = new URL("./z3/z3-built.wasm", self.location.href).href;
+  reportProgress("Downloading Z3 solver");
+  await (await fetchCounted(z3WasmUrl)).arrayBuffer();
+
+  reportProgress("Starting Z3");
   const z3MainScript = new URL("./z3/z3-built.js", self.location.href).href;
   const z3 = await init({
     locateFile: file => new URL(`./z3/${file}`, self.location.href).href,
     mainScriptUrlOrBlob: z3MainScript
   });
 
-  const runtime = await dotnet.create();
+  reportProgress("Downloading Dafny + Boogie assemblies");
+  const dotnetBuilder = typeof dotnet.withResourceLoader === "function"
+    ? dotnet.withResourceLoader(loadBootResource)
+    : dotnet;
+  const runtime = await dotnetBuilder.create();
   runtime.setModuleImports("dafnyZ3", {
     evaluate: async (solverId, smtLib) => {
       let context = contexts.get(solverId);
@@ -44,6 +116,7 @@ async function start() {
     }
   });
 
+  reportProgress("Starting the Dafny pipeline");
   const config = runtime.getConfig();
   await runtime.runMain(config.mainAssemblyName, []);
   const exports = await runtime.getAssemblyExports(config.mainAssemblyName);

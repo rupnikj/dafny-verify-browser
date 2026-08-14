@@ -84,6 +84,8 @@ dependency-free ES module:
 import { createDafny } from "./dafny-browser.js";
 
 const dafny = await createDafny(); // or createDafny({ baseUrl: "/static/dafny/" })
+// Optional: createDafny({ onProgress: ({ stage, loadedBytes, totalBytes }) => ... })
+// reports download progress during the first-visit fetch of the runtime.
 
 const result = await dafny.verify(`
 method Abs(x: int) returns (y: int)

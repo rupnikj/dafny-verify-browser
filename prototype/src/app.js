@@ -424,6 +424,9 @@ const diagnosticHover = hoverTooltip((view, position) => {
 const runtimeState = document.querySelector("#runtime-state");
 const runtimeDot = document.querySelector("#runtime-dot");
 const runtimeLabel = document.querySelector("#runtime-label");
+const runtimeNote = document.querySelector("#runtime-note");
+const loadProgress = document.querySelector("#load-progress");
+const loadProgressFill = document.querySelector("#load-progress-fill");
 const editorHost = document.querySelector("#editor");
 const verifyButton = document.querySelector("#verify");
 const verifyLabel = document.querySelector("#verify-label");
@@ -454,7 +457,17 @@ let editor;
 document.querySelector("#verify-kbd").textContent =
   /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘↵" : "Ctrl+↵";
 
-const verifierReady = createDafny();
+const verifierReady = createDafny({
+  onProgress({ stage, loadedBytes, totalBytes }) {
+    const megabytes = (loadedBytes / (1024 * 1024)).toFixed(0);
+    runtimeLabel.textContent = loadedBytes > 0
+      ? stage + "… " + megabytes + " MB"
+      : stage + "…";
+    const percent = Math.min(99, Math.round((loadedBytes / totalBytes) * 100));
+    loadProgress.setAttribute("aria-valuenow", String(percent));
+    loadProgressFill.style.width = Math.max(2, percent) + "%";
+  }
+});
 const parse = source => verifierReady.then(dafny => dafny.parse(source));
 const verify = source => verifierReady.then(dafny => dafny.verify(source));
 const getLastSmtTranscript = () => verifierReady.then(dafny => dafny.getLastSmtTranscript());
@@ -703,12 +716,16 @@ exampleSelect.addEventListener("change", () => {
 verifierReady.then(() => {
   runtimeDot.className = "status-dot is-ready";
   runtimeLabel.textContent = "Verifier ready";
+  runtimeNote.hidden = true;
+  loadProgress.hidden = true;
   verifyButton.disabled = false;
   output.textContent = "Dafny, Boogie, and Z3 WASM are ready.";
 }).catch(error => {
   runtimeDot.className = "status-dot is-error";
   runtimeLabel.textContent = "Startup failed";
   runtimeState.title = error?.message ?? String(error);
+  runtimeNote.hidden = true;
+  loadProgress.hidden = true;
   verifyButton.disabled = true;
   showRuntimeError(error);
 });

@@ -108,6 +108,28 @@ button { color: inherit; }
   gap: 16px;
 }
 
+.runtime-note {
+  color: #5e6978;
+  font-size: 11px;
+}
+
+.load-progress {
+  height: 3px;
+  background: #1a212c;
+  overflow: hidden;
+}
+
+.load-progress[hidden] {
+  display: none;
+}
+
+.load-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #71c2ff, #2c8ce8);
+  transition: width .3s ease;
+}
+
 .github-link {
   display: flex;
   align-items: center;
