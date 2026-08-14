@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RUNNING inline boot</title>
+  <style>body { font: 13px/1.5 monospace; background: #12161c; color: #d8dee9; padding: 20px; } .pass { color: #7ce38b; } .fail { color: #ff7b72; }</style>
+  <!-- Threaded Z3 stays network-loaded in Phase 1; the gate only concerns _framework. -->
+  <script src="../z3/z3-built.js"></script>
+</head>
+<body>
+<h3>Phase 1 gate: .NET boots from inline store, zero /_framework/ requests</h3>
+<pre id="log"></pre>
+<script type="module">
+const logElement = document.querySelector("#log");
+const log = message => { logElement.textContent += message + "\n"; };
+const seenRequests = [];
+new PerformanceObserver(list => {
+  for (const entry of list.getEntries()) seenRequests.push(entry.name);
+}).observe({ type: "resource", buffered: true });
+
+function finish(pass, summary) {
+  document.title = (pass ? "PASS" : "FAIL") + " inline boot";
+  const line = document.createElement("div");
+  line.className = pass ? "pass" : "fail";
+  line.textContent = "GATE: " + (pass ? "PASS" : "FAIL") + " — " + summary;
+  document.body.append(line);
+}
+
+const servedFromStore = [];
+const missingFromStore = [];
+try {
+  const t0 = performance.now();
+  const bundleResponse = await fetch("./framework-bundle.bin");
+  const inflated = new Uint8Array(await new Response(
+    bundleResponse.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+  const view = new DataView(inflated.buffer, inflated.byteOffset, inflated.byteLength);
+  const manifestLength = view.getUint32(0, true);
+  const manifest = JSON.parse(new TextDecoder().decode(inflated.subarray(4, 4 + manifestLength)));
+  const payloadBase = 4 + manifestLength;
+  const store = new Map();
+  for (const file of manifest.files) {
+    store.set(file.name, inflated.subarray(payloadBase + file.offset, payloadBase + file.offset + file.size));
+  }
+  log(`bundle: ${store.size} assets, ${(inflated.byteLength / 1048576).toFixed(1)} MB inflated in ${Math.round(performance.now() - t0)} ms`);
+
+  // Assets are keyed by path relative to _framework/. Satellite resources are
+  // requested by bare name with the culture only visible in the URI, so fall
+  // back to the URI's trailing segments.
+  const lookup = (name, defaultUri) => {
+    const direct = store.get(name);
+    if (direct) {
+      return { key: name, bytes: direct };
+    }
+    const segments = String(defaultUri ?? "").split("?")[0].split("/").filter(Boolean);
+    for (let take = 2; take <= 3 && take <= segments.length; take++) {
+      const key = segments.slice(-take).join("/");
+      const bytes = store.get(key);
+      if (bytes) {
+        return { key, bytes };
+      }
+    }
+    return null;
+  };
+  const blobUrl = (bytes, type) => URL.createObjectURL(new Blob([bytes], { type }));
+  const loadBootResource = (type, name, defaultUri) => {
+    const found = lookup(name, defaultUri);
+    if (!found) {
+      missingFromStore.push(type + ":" + name + " (" + defaultUri + ")");
+      return undefined;
+    }
+    servedFromStore.push(type + ":" + found.key);
+    if (type.startsWith("js-module") || type === "dotnetjs" || name.endsWith(".js") || name.endsWith(".mjs")) {
+      return blobUrl(found.bytes, "text/javascript");
+    }
+    // The loader only honors a Promise or a URL string from this hook; a bare
+    // Response object is silently ignored and it falls back to the network.
+    return Promise.resolve(new Response(found.bytes, {
+      headers: { "content-type": "application/octet-stream", "content-length": String(found.bytes.byteLength) }
+    }));
+  };
+
+  log("importing dotnet.js from blob URL…");
+  globalThis.__dotnetInlineBase = location.href;
+  const { dotnet } = await import(blobUrl(store.get("dotnet.js"), "text/javascript"));
+  // dotnet.js resolves "./blazor.boot.json" against import.meta.url, which is
+  // an invalid base for blob-imported modules — hand it the config as a
+  // data: URL instead (absolute, zero network).
+  const bootConfigDataUrl = "data:application/json;base64," +
+    btoa(String.fromCharCode(...store.get("blazor.boot.json")));
+  const tBoot = performance.now();
+  const runtime = await dotnet
+    .withConfigSrc(bootConfigDataUrl)
+    .withResourceLoader(loadBootResource)
+    .create();
+  log(`dotnet.create in ${Math.round(performance.now() - tBoot)} ms; ` +
+      `${servedFromStore.length} assets served from store`);
+
+  const { init } = await import("../z3-api.js");
+  const z3 = await init({
+    locateFile: file => new URL(`../z3/${file}`, location.href).href,
+    mainScriptUrlOrBlob: new URL("../z3/z3-built.js", location.href).href
+  });
+  const contexts = new Map();
+  runtime.setModuleImports("dafnyZ3", {
+    evaluate: async (solverId, smtLib) => {
+      let context = contexts.get(solverId);
+      if (!context) {
+        const config = z3.Z3.mk_config();
+        context = z3.Z3.mk_context_rc(config);
+        z3.Z3.del_config(config);
+        contexts.set(solverId, context);
+      }
+      return z3.Z3.eval_smtlib2_string(context, smtLib);
+    },
+    close: solverId => {
+      const context = contexts.get(solverId);
+      if (context) {
+        z3.Z3.del_context(context);
+        contexts.delete(solverId);
+      }
+    }
+  });
+
+  const config = runtime.getConfig();
+  await runtime.runMain(config.mainAssemblyName, []);
+  const exports = await runtime.getAssemblyExports(config.mainAssemblyName);
+  const result = JSON.parse(await exports.DafnyBrowser.BrowserApi.Verify(
+    "method M() ensures 1 + 1 == 2 {}"));
+  log("verify: " + JSON.stringify({
+    verified: result.verified, errors: result.errorCount, smt: result.smtExchangeCount
+  }));
+
+  await new Promise(resolveDelay => setTimeout(resolveDelay, 500));
+  const frameworkRequests = seenRequests.filter(url => url.includes("/_framework/"));
+  log("/_framework/ network requests: " + frameworkRequests.length +
+      (frameworkRequests.length ? "\n  " + frameworkRequests.join("\n  ") : ""));
+  log("assets the store could not serve: " +
+      (missingFromStore.length ? "\n  " + missingFromStore.join("\n  ") : "none"));
+
+  finish(result.verified === true && frameworkRequests.length === 0,
+    `verified=${result.verified} frameworkRequests=${frameworkRequests.length} missing=${missingFromStore.length}`);
+} catch (error) {
+  log("ERROR: " + (error?.stack ?? String(error)));
+  log("hook served " + servedFromStore.length + " assets before failing" +
+      (servedFromStore.length ? "; first: " + servedFromStore.slice(0, 5).join(", ") : ""));
+  log("hook misses: " + (missingFromStore.length ? missingFromStore.slice(0, 10).join("\n  ") : "none"));
+  finish(false, "exception during boot");
+}
+</script>
+</body>
+</html>
