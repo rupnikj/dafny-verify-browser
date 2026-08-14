@@ -22,6 +22,7 @@ const outPath = resolve(prototypeRoot, "dist/dafny-artifact.html");
 const brotli = bytes => brotliCompressSync(bytes, {
   params: {
     [constants.BROTLI_PARAM_QUALITY]: 11,
+    [constants.BROTLI_PARAM_LGWIN]: 24,
     [constants.BROTLI_PARAM_SIZE_HINT]: bytes.byteLength
   }
 });
@@ -72,6 +73,9 @@ console.log(`dafny-artifact.html: ${(htmlBytes / 1048576).toFixed(2)} MB ` +
   `${(frameworkBr.byteLength / 1048576).toFixed(2)} MB br; ` +
   `z3-st ${(z3Wasm.byteLength / 1048576).toFixed(1)} MB -> ${(z3WasmBr.byteLength / 1048576).toFixed(2)} MB br)`);
 if (htmlBytes > BUDGET_BYTES) {
-  console.error(`FAIL: exceeds ${(BUDGET_BYTES / 1048576).toFixed(0)} MB budget`);
+  // ::error:: makes the size visible as a GitHub annotation (fetchable via
+  // the API even when job logs are not).
+  console.error(`::error::dafny-artifact.html is ${htmlBytes} bytes, ` +
+    `${htmlBytes - BUDGET_BYTES} over the ${(BUDGET_BYTES / 1048576).toFixed(0)} MB budget`);
   process.exit(1);
 }
