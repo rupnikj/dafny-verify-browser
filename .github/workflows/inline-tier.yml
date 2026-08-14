@@ -1,0 +1,91 @@
+name: Inline tier — artifact build and browser gates
+
+# Deliberately separate from the Pages deploy: a failure here (including the
+# cross-repo z3-st download) never blocks the threaded tier's deployment.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DAFNY_SHA: f3c2fedfb2b88272af5b64f5e45d803a3bc0043a
+  Z3_INLINE_TAG: v0.1.0
+
+jobs:
+  inline-tier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone pinned Dafny and apply the browser-compat patch
+        run: |
+          git init upstream-dafny
+          git -C upstream-dafny remote add origin https://github.com/dafny-lang/dafny.git
+          git -C upstream-dafny fetch --depth 1 origin "$DAFNY_SHA"
+          git -C upstream-dafny checkout FETCH_HEAD
+          git -C upstream-dafny apply "$GITHUB_WORKSPACE/patches/dafny-browser-compat.patch"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install .NET WebAssembly workload
+        run: dotnet workload install wasm-tools
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: prototype/package-lock.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ env.DAFNY_SHA }}-${{ hashFiles('prototype/DafnyBrowser.csproj') }}
+
+      - name: Build (bundle assets + publish .NET browser-wasm)
+        working-directory: prototype
+        run: |
+          npm ci
+          npm run build
+
+      - name: Download pinned z3-st release and verify its hash
+        run: |
+          mkdir -p z3-st-dist
+          base="https://github.com/rupnikj/z3-inline/releases/download/$Z3_INLINE_TAG"
+          curl -fL -o z3-st-dist/z3-st.js "$base/z3-st.js"
+          curl -fL -o z3-st-dist/z3-st.wasm "$base/z3-st.wasm"
+          curl -fL -o z3-st-dist/build-info.json "$base/build-info.json"
+          expected=$(python3 -c "import json; print(json.load(open('z3-st-dist/build-info.json'))['wasmSha256'])")
+          actual=$(sha256sum z3-st-dist/z3-st.wasm | cut -d' ' -f1)
+          test "$expected" = "$actual" || { echo "z3-st.wasm hash mismatch: $actual != $expected"; exit 1; }
+          echo "z3-st $Z3_INLINE_TAG verified: $actual"
+
+      - name: Assemble single-file artifact (budget-enforced)
+        working-directory: prototype
+        run: Z3_ST_DIR="$GITHUB_WORKSPACE/z3-st-dist" node tools/make-dafny-artifact.mjs
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('prototype/package-lock.json') }}
+
+      - name: Install Chromium
+        working-directory: prototype
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser gates (demo, inline boot, artifact)
+        working-directory: prototype
+        run: npm run test:browser
+
+      - name: Upload the single-file verifier
+        uses: actions/upload-artifact@v4
+        with:
+          name: dafny-artifact
+          path: prototype/dist/dafny-artifact.html
+          if-no-files-found: error

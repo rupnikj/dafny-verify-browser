@@ -122,6 +122,44 @@ service worker that injects the headers on every response and reloads the page
 once on first visit. On hosts that already send the headers (like the local
 dev server here) it does nothing.
 
+## The inline tier: a single-file verifier
+
+Alongside the hosted demo, `tools/make-dafny-artifact.mjs` assembles the whole
+verifier into **one ~16 MB self-contained HTML file** — every assembly,
+the .NET runtime, a single-threaded Z3, and a minimal UI, brotli-compressed
+and base64-inlined. It runs with **zero network requests, no workers, no
+`SharedArrayBuffer`, and no COOP/COEP headers**, which means it works in
+hostile sandboxes (restrictive-CSP iframes such as claude.ai artifacts) and
+anywhere else a lone HTML file can be opened. The hosted threaded tier stays
+the default and fastest mode; the inline tier trades speed for portability —
+verification runs on the page thread (the UI freezes until the verdict) and
+the solver is the single-threaded [z3-inline](https://github.com/rupnikj/z3-inline)
+build driven by a session-replay transport (`src/z3-st-transport.js`), which
+reproduces the threaded tier's verdicts and byte-identical SMT-LIB inputs
+(`test/inline-parity.mjs`).
+
+Three .NET-WASM loader findings this build encodes, for anyone attempting the
+same (`tools/bundle-lib.mjs`, `tools/dafny-artifact-template.html`):
+
+1. `dotnet.js` and the *fingerprinted* `dotnet.runtime.*.js` /
+   `dotnet.native.*.js` resolve URLs against `import.meta.url`, which is an
+   invalid base when imported from `blob:` URLs — they need a patch to prefer
+   a settable global base.
+2. The boot config must be handed over explicitly (`withConfigSrc` with a
+   `data:` URL); the loader cannot resolve `./blazor.boot.json` from a blob
+   base.
+3. The `withResourceLoader` hook only honors a `Promise` or a URL-string
+   return; a bare `Response` object is silently ignored and the loader falls
+   back to the network.
+
+To build it: `Z3_ST_DIR=/path/to/z3-inline/dist node tools/make-dafny-artifact.mjs`
+(z3-st assets come from a [z3-inline release](https://github.com/rupnikj/z3-inline/releases)).
+The [inline-tier workflow](.github/workflows/inline-tier.yml) rebuilds it on
+every push — pinned z3-st release verified by SHA-256, a 16 MB size budget,
+and real-browser gates — and uploads the file as a build artifact. It is
+deliberately separate from the deploy workflow so the hosted tier never
+depends on it.
+
 ## Building and testing locally
 
 Prerequisites: .NET 8 SDK with the `wasm-tools` workload, Node.js 22+. If the
@@ -152,6 +190,8 @@ checkout are never committed.
 | --- | --- |
 | `npm run test:wasm` | Two-program smoke test: `Abs` verifies, `Bad` fails with the right diagnostic |
 | `npm run test:module` | The standalone ES module surface |
+| `npm run test:browser` | Real Chromium (Playwright): the demo through its worker + COI path, the inline zero-network boot, and the single-file artifact |
+| `node test/inline-parity.mjs` | Threaded z3 vs single-threaded z3-st: identical verdicts and SMT input hashes |
 
 Two generic harnesses are included for testing at scale:
 `test/verify-stdin.mjs` verifies a single `.dfy` file, and

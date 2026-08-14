@@ -3,6 +3,7 @@ upstream-dafny/
 upstream-boogie/
 
 # Build output
+node_modules/
 prototype/bin/
 prototype/obj/
 prototype/dist/
