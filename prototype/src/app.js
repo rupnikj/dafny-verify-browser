@@ -50,6 +50,26 @@ const examples = {
     "{",
     "  y := x;",
     "}"
+  ].join("\n"),
+  max: [
+    "method MaxArray(a: array<int>) returns (m: int)",
+    "  requires a.Length > 0",
+    "  ensures forall i :: 0 <= i < a.Length ==> a[i] <= m",
+    "  ensures exists i :: 0 <= i < a.Length && a[i] == m",
+    "{",
+    "  m := a[0];",
+    "  var j := 1;",
+    "  while j < a.Length",
+    "    invariant 1 <= j <= a.Length",
+    "    invariant forall i :: 0 <= i < j ==> a[i] <= m",
+    "    invariant exists i :: 0 <= i < j && a[i] == m",
+    "  {",
+    "    if a[j] > m {",
+    "      m := a[j];",
+    "    }",
+    "    j := j + 1;",
+    "  }",
+    "}"
   ].join("\n")
 };
 
@@ -428,7 +448,11 @@ const cursorPosition = document.querySelector("#cursor-position");
 let currentDiagnostics = [];
 let activeSeverity = "all";
 let running = false;
+let suppressEmptyState = false;
 let editor;
+
+document.querySelector("#verify-kbd").textContent =
+  /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘↵" : "Ctrl+↵";
 
 const verifierReady = createDafny();
 const parse = source => verifierReady.then(dafny => dafny.parse(source));
@@ -444,6 +468,7 @@ function updateCursor(view) {
 
 function clearResultForEdit() {
   currentDiagnostics = [];
+  suppressEmptyState = false;
   renderProblems();
   modifiedDot.classList.add("is-visible");
   resultSummary.className = "result-summary is-idle";
@@ -565,7 +590,11 @@ function renderProblems() {
 
   problemCount.textContent = String(currentDiagnostics.length);
   problemFilters.hidden = currentDiagnostics.length === 0;
-  emptyState.hidden = filtered.length !== 0;
+  // The success/running summary card already says there is nothing to show;
+  // only display the placeholder when it adds information (e.g. a filter
+  // matches nothing).
+  emptyState.hidden = filtered.length !== 0 ||
+    (suppressEmptyState && currentDiagnostics.length === 0);
 }
 
 problemFilters.addEventListener("click", event => {
@@ -592,6 +621,7 @@ function showVerificationResult(result) {
     .map(diagnostic => ({ ...diagnostic, severity: normalizedSeverity(diagnostic.severity) }))
     .filter(diagnostic => diagnostic.severity === "error" || diagnostic.severity === "warning");
   currentDiagnostics = editorDiagnostics;
+  suppressEmptyState = result.verified;
   editor.dispatch({ effects: setDiagnosticsEffect.of(editorDiagnostics) });
   renderProblems();
   output.textContent = JSON.stringify(result, null, 2);
@@ -639,6 +669,7 @@ async function runVerification() {
   setRunningState(true);
   setPanel("problems");
   currentDiagnostics = [];
+  suppressEmptyState = true;
   editor.dispatch({ effects: setDiagnosticsEffect.of([]) });
   renderProblems();
   resultSummary.className = "result-summary is-running";
