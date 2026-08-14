@@ -22,6 +22,9 @@ export function patchLoaderScript(bytes) {
 export async function buildFrameworkBundle(frameworkRoot, {
   includeSatellites = true,
   gzipLevel = 6,
+  // "gzip" for DecompressionStream consumers; "none" returns the raw
+  // container so the caller can apply its own (e.g. brotli) compression.
+  compression = "gzip",
   // Optional allowlist of assembly simple names ("DafnyCore"). When given,
   // assemblies outside the list are dropped from both the bundle and the
   // boot config, so the loader never requests them.
@@ -70,8 +73,9 @@ export async function buildFrameworkBundle(frameworkRoot, {
   const manifestBytes = Buffer.from(JSON.stringify({ files }), "utf8");
   const header = Buffer.alloc(4);
   header.writeUInt32LE(manifestBytes.byteLength, 0);
+  const container = Buffer.concat([header, manifestBytes, ...chunks]);
   return {
-    bundle: gzipSync(Buffer.concat([header, manifestBytes, ...chunks]), { level: gzipLevel }),
+    bundle: compression === "gzip" ? gzipSync(container, { level: gzipLevel }) : container,
     fileCount: files.length,
     rawBytes: offset,
     bootConfigBytes

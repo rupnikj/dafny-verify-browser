@@ -45,6 +45,7 @@ Solver exchanges replay the session per query (soft timeout __SOFT_TIMEOUT_MS__ 
 Built __BUILD_STAMP__.</div>
 
 <script>__Z3_GLUE__</script>
+<script>__BROTLI_DECODER__</script>
 <script type="text/plain" id="fw-b64">__FRAMEWORK_B64__</script>
 <script type="text/plain" id="z3-b64">__Z3_WASM_B64__</script>
 
@@ -75,9 +76,9 @@ function decodeBase64(elementId) {
   return bytes;
 }
 
-async function gunzip(bytes) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+function brotli(bytes) {
+  const decode = typeof __brotliDecode === "function" ? __brotliDecode : __brotliDecode.default;
+  return new Uint8Array(decode(bytes));
 }
 
 let verifyExport = null;
@@ -87,14 +88,14 @@ async function boot() {
   const mark = label => { stamps.push([label, performance.now()]); };
 
   setStatus("decoding payloads…"); await paint();
-  const frameworkGz = decodeBase64("fw-b64");
-  const z3Gz = decodeBase64("z3-b64");
+  const frameworkBr = decodeBase64("fw-b64");
+  const z3Br = decodeBase64("z3-b64");
   mark("base64 decode");
 
-  setStatus("decompressing…"); await paint();
-  const inflated = await gunzip(frameworkGz);
-  const wasmBinary = await gunzip(z3Gz);
-  mark("gunzip");
+  setStatus("decompressing (brotli)…"); await paint();
+  const inflated = brotli(frameworkBr);
+  const wasmBinary = brotli(z3Br);
+  mark("brotli");
 
   const view = new DataView(inflated.buffer, inflated.byteOffset, inflated.byteLength);
   const manifestLength = view.getUint32(0, true);
