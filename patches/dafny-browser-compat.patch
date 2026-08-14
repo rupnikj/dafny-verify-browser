@@ -1,0 +1,58 @@
+diff --git a/Source/DafnyCore/DafnyMain.cs b/Source/DafnyCore/DafnyMain.cs
+index 07e6b8ce8..a83fbbf1a 100644
+--- a/Source/DafnyCore/DafnyMain.cs
++++ b/Source/DafnyCore/DafnyMain.cs
+@@ -75,8 +75,12 @@ namespace Microsoft.Dafny {
+       return (program, null);
+     }
+ 
+-    public static readonly TaskScheduler LargeThreadScheduler =
+-      CustomStackSizePoolTaskScheduler.Create(0x10000000, Environment.ProcessorCount);
++    // Browser WebAssembly does not support creating threads with a custom stack.
++    // The browser entry point runs the pipeline in a Web Worker and uses the
++    // default scheduler instead of Dafny's CLI-oriented large-stack pool.
++    public static readonly TaskScheduler LargeThreadScheduler = OperatingSystem.IsBrowser()
++      ? TaskScheduler.Default
++      : CustomStackSizePoolTaskScheduler.Create(0x10000000, Environment.ProcessorCount);
+ 
+     public static readonly TaskFactory LargeStackFactory = new(CancellationToken.None,
+       TaskCreationOptions.DenyChildAttach, TaskContinuationOptions.None, LargeThreadScheduler);
+diff --git a/Source/DafnyCore/DafnyOptions.cs b/Source/DafnyCore/DafnyOptions.cs
+index 9029c3d1a..0cf6c035a 100644
+--- a/Source/DafnyCore/DafnyOptions.cs
++++ b/Source/DafnyCore/DafnyOptions.cs
+@@ -240,7 +240,19 @@ namespace Microsoft.Dafny {
+     }
+ 
+     private static DafnyOptions defaultImmutableOptions;
+-    public static DafnyOptions DefaultImmutableOptions => defaultImmutableOptions ??= CreateUsingOldParser(Console.Out, Console.In);
++    public static DafnyOptions DefaultImmutableOptions => defaultImmutableOptions ??= CreateDefaultImmutableOptions();
++
++    private static DafnyOptions CreateDefaultImmutableOptions() {
++      if (OperatingSystem.IsBrowser()) {
++        // This instance is only used to format AST nodes. Parsing even an empty
++        // command line applies Boogie's CLI defaults, which dynamically loads a
++        // prover assembly via Assembly.Location/Assembly.LoadFrom. Neither that
++        // discovery mechanism nor Console.In is available in browser WASM.
++        return new DafnyOptions(TextReader.Null, TextWriter.Null, TextWriter.Null);
++      }
++
++      return CreateUsingOldParser(Console.Out, Console.In);
++    }
+ 
+     public static DafnyOptions CreateUsingOldParser(TextWriter outputWriter, TextReader input = null, params string[] arguments) {
+       input ??= TextReader.Null;
+diff --git a/Source/DafnyRuntime/DafnyRuntime.csproj b/Source/DafnyRuntime/DafnyRuntime.csproj
+index bfe56d97c..a73dd391d 100644
+--- a/Source/DafnyRuntime/DafnyRuntime.csproj
++++ b/Source/DafnyRuntime/DafnyRuntime.csproj
+@@ -49,7 +49,8 @@
+   <PropertyGroup>
+     <DafnyRuntimeJar>DafnyRuntimeJava/build/libs/DafnyRuntime-4.11.1.jar</DafnyRuntimeJar>
+   </PropertyGroup>
+-  <Target Name="BuildDafnyRuntimeJar" AfterTargets="ResolveReferences" BeforeTargets="CoreCompile" Inputs="$(MSBuildProjectFile);@(DafnyRuntimeJavaInputFile)" Outputs="$(DafnyRuntimeJar)">
++  <Target Name="BuildDafnyRuntimeJar" AfterTargets="ResolveReferences" BeforeTargets="CoreCompile" Inputs="$(MSBuildProjectFile);@(DafnyRuntimeJavaInputFile)" Outputs="$(DafnyRuntimeJar)"
++          Condition="'$(SkipDafnyRuntimeJar)' != 'true'">
+     
+     <Message Text="Compiling DafnyRuntimeJava to $(DafnyRuntimeJar)..." Importance="high" />
+     <!-- For some reason the DafnyRuntime.jar was often not (yet?) created after this Target was run, leading to build failures. 

@@ -1,0 +1,25 @@
+{
+  "name": "dafny-browser-wasm-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:assets": "node scripts/build-assets.mjs",
+    "build": "npm run build:assets && npm run publish:dotnet",
+    "publish:dotnet": "node scripts/publish-dotnet.mjs",
+    "start": "node server.mjs",
+    "test:module": "node test/dafny-browser-module.mjs",
+    "test:wasm": "node test/full-wasm.mjs"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.8",
+    "@lezer/highlight": "^1.2.3",
+    "z3-solver": "5.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

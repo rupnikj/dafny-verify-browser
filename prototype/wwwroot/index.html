@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Dafny Browser Verifier</title>
+    <!-- GitHub Pages cannot send COOP/COEP headers; this service worker injects
+         them so Z3's threaded WASM build gets SharedArrayBuffer. It no-ops on
+         hosts that already serve the headers, and reloads once on first visit. -->
+    <script src="./coi-serviceworker.js"></script>
+    <link rel="stylesheet" href="./app.css">
+  </head>
+  <body>
+    <main class="workbench">
+      <header class="titlebar">
+        <div class="brand" aria-label="Dafny Browser Verifier">
+          <span class="brand-mark" aria-hidden="true">D</span>
+          <div>
+            <strong>Dafny Browser</strong>
+            <span>local WASM verifier</span>
+          </div>
+        </div>
+
+        <div class="runtime-state" id="runtime-state" role="status">
+          <span class="status-dot is-loading" id="runtime-dot"></span>
+          <span id="runtime-label">Loading .NET and Z3…</span>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-label="Editor actions">
+        <div class="file-tab" aria-current="page">
+          <span class="dafny-file-icon">D</span>
+          <span>input.dfy</span>
+          <span class="modified-dot" id="modified-dot" title="Modified">●</span>
+        </div>
+        <div class="toolbar-actions">
+          <label class="example-picker">
+            <span class="sr-only">Load example</span>
+            <select id="example">
+              <option value="abs">Abs (verifies)</option>
+              <option value="bad">Bad (fails)</option>
+            </select>
+          </label>
+          <button class="verify-button" id="verify" type="button" disabled>
+            <span class="play-icon" aria-hidden="true">▶</span>
+            <span id="verify-label">Verify</span>
+            <kbd>⌘↵</kbd>
+          </button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="editor-pane">
+          <div id="editor" aria-label="Dafny source editor"></div>
+        </div>
+
+        <aside class="panel" aria-label="Verification results">
+          <div class="panel-tabs" role="tablist">
+            <button class="panel-tab is-active" id="problems-tab" type="button" role="tab" aria-selected="true">
+              Problems <span class="badge" id="problem-count">0</span>
+            </button>
+            <button class="panel-tab" id="output-tab" type="button" role="tab" aria-selected="false">Output</button>
+          </div>
+
+          <section class="result-summary is-idle" id="result-summary" aria-live="polite">
+            <span class="result-icon" id="result-icon">◇</span>
+            <div>
+              <strong id="result-title">Ready to verify</strong>
+              <span id="result-detail">All computation stays in this browser.</span>
+            </div>
+          </section>
+
+          <div class="panel-view" id="problems-view" role="tabpanel" aria-labelledby="problems-tab">
+            <div class="problem-filters" id="problem-filters" hidden>
+              <button class="filter is-active" type="button" data-severity="all">All</button>
+              <button class="filter" type="button" data-severity="error">Errors</button>
+              <button class="filter" type="button" data-severity="warning">Warnings</button>
+            </div>
+            <ol class="problems-list" id="problems-list"></ol>
+            <div class="empty-state" id="empty-state">
+              <span aria-hidden="true">✓</span>
+              <p>No problems to show.</p>
+            </div>
+          </div>
+
+          <div class="panel-view output-view" id="output-view" role="tabpanel" aria-labelledby="output-tab" hidden>
+            <pre id="output">Verifier is starting…</pre>
+          </div>
+        </aside>
+      </section>
+
+      <footer class="statusbar">
+        <span id="verification-stage">Dafny / Boogie / Z3 WASM</span>
+        <span class="status-spacer"></span>
+        <span id="cursor-position">Ln 1, Col 1</span>
+        <span>UTF-8</span>
+        <span>Spaces: 2</span>
+      </footer>
+    </main>
+
+    <noscript>This demo needs JavaScript and WebAssembly enabled.</noscript>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <WasmMainJSPath>wwwroot/verification-worker.js</WasmMainJSPath>
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DefaultItemExcludes>$(DefaultItemExcludes);NativeHarness/**;dist/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../upstream-dafny/Source/DafnyCore/DafnyCore.csproj">
+      <AdditionalProperties>SkipDafnyRuntimeJar=true</AdditionalProperties>
+    </ProjectReference>
+    <EmbeddedResource Include="../upstream-dafny/Source/DafnyCore/DafnyPrelude.bpl">
+      <LogicalName>DafnyBrowser.DafnyPrelude.bpl</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

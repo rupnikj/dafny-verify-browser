@@ -1,0 +1,82 @@
+name: Build and deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  DAFNY_SHA: f3c2fedfb2b88272af5b64f5e45d803a3bc0043a
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone pinned Dafny and apply the browser-compat patch
+        run: |
+          git init upstream-dafny
+          git -C upstream-dafny remote add origin https://github.com/dafny-lang/dafny.git
+          git -C upstream-dafny fetch --depth 1 origin "$DAFNY_SHA"
+          git -C upstream-dafny checkout FETCH_HEAD
+          git -C upstream-dafny apply "$GITHUB_WORKSPACE/patches/dafny-browser-compat.patch"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install .NET WebAssembly workload
+        run: dotnet workload install wasm-tools
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: prototype/package-lock.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ env.DAFNY_SHA }}-${{ hashFiles('prototype/DafnyBrowser.csproj') }}
+
+      - name: Build (bundle assets + publish .NET browser-wasm)
+        working-directory: prototype
+        run: |
+          npm ci
+          npm run build
+
+      - name: Integration test — Dafny/Boogie WASM against Z3 WASM
+        working-directory: prototype
+        run: npm run test:wasm
+
+      - name: Prepare Pages artifact
+        run: touch prototype/dist/wwwroot/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: prototype/dist/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

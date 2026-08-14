@@ -1,0 +1,22 @@
+# Upstream checkouts (recreated by CI / docs instructions; pinned SHAs in README)
+upstream-dafny/
+upstream-boogie/
+
+# Build output
+prototype/bin/
+prototype/obj/
+prototype/dist/
+prototype/node_modules/
+prototype/NativeHarness/bin/
+prototype/NativeHarness/obj/
+
+# Generated web assets (produced by `npm run build:assets`)
+prototype/wwwroot/z3/
+prototype/wwwroot/z3-api.js
+prototype/wwwroot/app.js
+prototype/wwwroot/app.js.map
+prototype/wwwroot/app.css
+prototype/wwwroot/dafny-browser.js
+prototype/wwwroot/dafny-browser.js.map
+
+.DS_Store

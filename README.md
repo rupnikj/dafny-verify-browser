@@ -1,2 +1,196 @@
 # dafny-verify-browser
-dafny verify running entirely in the browser — real Dafny 4.11 + Boogie compiled to .NET WebAssembly, driving the official Z3 WASM build. No server, no native Z3, source never leaves the page. Built with Codex.
+
+[![Build and deploy to Pages](https://github.com/rupnikj/dafny-verify-browser/actions/workflows/deploy.yml/badge.svg)](https://github.com/rupnikj/dafny-verify-browser/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+`dafny verify` running entirely in the browser — the real Dafny 4.11.1
+frontend and Boogie 3.5.5 compiled to .NET WebAssembly, driving the official
+Z3 WebAssembly build. No verifier service, no native Z3, and the source you
+type never leaves the page.
+
+**Live demo:** <https://rupnikj.github.io/dafny-verify-browser/>
+
+The first load downloads the whole verifier (~95 MB raw — a .NET runtime, 223
+managed assemblies, and a 33 MB Z3), so give it a moment; subsequent visits
+are served from the browser cache.
+
+## Why this is interesting
+
+Dafny verification normally requires a native toolchain: the .NET-based Dafny
+frontend translates to Boogie, Boogie generates verification conditions, and a
+native Z3 *process* discharges them over stdin/stdout. The finding documented
+in [`docs/investigation.md`](docs/investigation.md) is that the process
+boundary is the **only** genuinely native dependency — and Boogie already
+abstracts it behind a replaceable seam. Nothing in Dafny-to-Boogie
+translation, VC generation, or the SMT encoding needed to change.
+
+## How it works
+
+```
+┌─────────────────────────── Web Worker ────────────────────────────┐
+│                                                                   │
+│  .NET browser-wasm                          Z3 5.0.0 WASM         │
+│  ┌─────────────────────────────┐            ┌────────────────┐    │
+│  │ Dafny parse → resolve →     │  SMT-LIB   │ eval_smtlib2_  │    │
+│  │ Boogie translate → VC gen   │ ─────────► │ string on one  │    │
+│  │                             │ ◄───────── │ Z3 context     │    │
+│  │ BrowserSmtSolver            │  s-exprs   │ (pthreads)     │    │
+│  └─────────────────────────────┘            └────────────────┘    │
+│                    bridged by ~20 lines of JS                     │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+Three pieces:
+
+1. **Dafny + Boogie on .NET browser-wasm, unmodified.**
+   [`prototype/DafnyBrowser.csproj`](prototype/DafnyBrowser.csproj) references
+   upstream `DafnyCore` directly. [`prototype/Program.cs`](prototype/Program.cs)
+   exposes `Parse` / `Verify` / `GetLastSmtTranscript` via `[JSExport]` and
+   drives Dafny's internal pipeline (`ProgramParser.Parse` →
+   `ProgramResolver.Resolve` → `BoogieGenerator.Translate` →
+   `DafnyMain.BoogieOnce`), skipping the CLI and language-server layers.
+
+2. **The official Z3 WASM build** from the `z3-solver` npm package. Its
+   `eval_smtlib2_string` API preserves declarations and push/pop state across
+   calls on a single context, so batch string evaluation stands in for an
+   interactive stdin/stdout session.
+
+3. **[`BrowserSmtSolver.cs`](prototype/BrowserSmtSolver.cs) — the entire
+   bridge.** It subclasses Boogie's existing abstract `SMTLibSolver` (the same
+   interface the native process transport implements) and is injected through
+   the public `options.CreateSolver` factory. Boogie still produces every byte
+   of SMT-LIB itself, which is why results match native Dafny exactly — the
+   test harness even hashes the SMT transcript per file to detect drift.
+
+Upstream changes amount to a **58-line patch**
+([`patches/dafny-browser-compat.patch`](patches/dafny-browser-compat.patch)):
+use the default task scheduler on browser (WASM cannot create
+custom-stack threads), avoid `Console.In` and dynamic prover-assembly loading
+when building default options, and make the Java runtime JAR build skippable.
+Everything else — embedding `DafnyPrelude.bpl` as a resource, instantiating
+the SMTLib factory directly, silent structured output — lives in this repo's
+wrapper project.
+
+At runtime, a classic Web Worker hosts both WASM runtimes (classic because
+Z3's Emscripten pthread bootstrap needs `importScripts`). Z3 uses threads, so
+the page must be cross-origin isolated — see the GitHub Pages note below.
+
+## Embedding the verifier in your own page
+
+The published site doubles as a distribution. It exposes a standalone,
+dependency-free ES module:
+
+```js
+import { createDafny } from "./dafny-browser.js";
+
+const dafny = await createDafny(); // or createDafny({ baseUrl: "/static/dafny/" })
+
+const result = await dafny.verify(`
+method Abs(x: int) returns (y: int)
+  ensures y >= 0
+{
+  if x < 0 { y := -x; } else { y := x; }
+}
+`);
+// result: { verified, verifiedCount, errorCount, diagnostics, stage, smtExchangeCount }
+
+const transcript = await dafny.getLastSmtTranscript(); // raw SMT-LIB exchanges
+dafny.terminate();
+```
+
+To self-host, copy the deployed site (or a local `prototype/dist/wwwroot`):
+`dafny-browser.js`, `verification-worker.js`, `z3-api.js`, the `z3/`
+directory, and the complete `_framework/` directory, keeping their relative
+paths. Your origin must be cross-origin isolated (send COOP/COEP headers, or
+use the coi-serviceworker trick below).
+
+## Hosting on GitHub Pages: the COOP/COEP trick
+
+Z3's WASM build needs `SharedArrayBuffer`, which browsers only enable on
+cross-origin-isolated pages — normally requiring these response headers:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+GitHub Pages cannot send custom headers. The demo therefore ships
+[coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker): a small
+service worker that injects the headers on every response and reloads the page
+once on first visit. On hosts that already send the headers (like the local
+dev server here) it does nothing.
+
+## Building and testing locally
+
+Prerequisites: .NET 8 SDK with the `wasm-tools` workload, Node.js 22+.
+
+```sh
+# One-time: fetch pinned Dafny sources and apply the compat patch
+git clone https://github.com/dafny-lang/dafny.git upstream-dafny
+git -C upstream-dafny checkout f3c2fedfb2b88272af5b64f5e45d803a3bc0043a
+git -C upstream-dafny apply ../patches/dafny-browser-compat.patch
+
+cd prototype
+npm ci
+npm run build        # bundle JS assets, publish .NET browser-wasm → dist/
+npm run test:wasm    # end-to-end: Dafny+Boogie WASM against Z3 WASM
+npm start            # serve dist/wwwroot with COOP/COEP at http://localhost:4173
+```
+
+The GitHub Actions workflow ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml))
+does exactly this on every push to `main`, gates on the integration test, and
+deploys `dist/wwwroot` to Pages — build outputs and the upstream Dafny
+checkout are never committed.
+
+### Test suites
+
+| Command | What it checks |
+| --- | --- |
+| `npm run test:wasm` | Two-program smoke test: `Abs` verifies, `Bad` fails with the right diagnostic |
+| `npm run test:module` | The standalone ES module surface |
+
+Two generic harnesses are included for testing at scale:
+`test/verify-stdin.mjs` verifies a single `.dfy` file, and
+`test/verify-corpus.mjs <dir>` runs a whole directory of programs expected to
+fail next to a `solutions/` subdirectory expected to verify, hashing each
+file's SMT transcript so encoding drift shows up as a diff. In differential
+testing against native Dafny on a larger private corpus, the browser verifier
+reproduced native verdicts — including a case where native Dafny itself runs
+out of solver resources.
+
+## Repository layout
+
+```
+prototype/            The wrapper project: C# entry points, JS runtime, demo page
+  Program.cs          [JSExport] browser API driving Dafny's internal pipeline
+  BrowserSmtSolver.cs Boogie SMTLibSolver transport backed by Z3 WASM
+  src/                dafny-browser.js module, worker API, demo app (CodeMirror)
+  wwwroot/            Demo page, verification worker, coi-serviceworker
+  test/               Node-based integration tests + generic corpus harness
+  NativeHarness/      Native reference pipeline (transcripts in logs/)
+patches/              58-line browser-compat patch against pinned Dafny
+docs/investigation.md Full write-up: source map, blockers, findings
+```
+
+## Status and limitations
+
+This is a proof of concept. Known hardening work, none of it fundamental:
+the bundle is untrimmed (~95 MB raw; a production build should trim or split
+a verifier-focused project), verification cancellation is not wired to Z3
+interruption, and deeply recursive proofs may need WASM stack tuning.
+
+## Credits
+
+- The port was produced with OpenAI Codex; the investigation log in
+  [`docs/investigation.md`](docs/investigation.md) is its working record.
+- [Dafny](https://github.com/dafny-lang/dafny),
+  [Boogie](https://github.com/boogie-org/boogie), and
+  [Z3](https://github.com/Z3Prover/z3) do all the actual verification work.
+- Demo editor: [CodeMirror](https://codemirror.net). Pages isolation:
+  [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker).
+
+See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for full license texts.
+
+## License
+
+[MIT](LICENSE)
