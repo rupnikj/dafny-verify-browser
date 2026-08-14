@@ -4,8 +4,10 @@
   <meta charset="utf-8">
   <title>RUNNING inline boot</title>
   <style>body { font: 13px/1.5 monospace; background: #12161c; color: #d8dee9; padding: 20px; } .pass { color: #7ce38b; } .fail { color: #ff7b72; }</style>
-  <!-- Threaded Z3 stays network-loaded in Phase 1; the gate only concerns _framework. -->
-  <script src="../z3/z3-built.js"></script>
+  <!-- Single-threaded z3-st (network-loaded from this directory; the gate only
+       counts /_framework/ requests). Main-thread pthreads are unreliable on
+       low-core CI runners, so the threaded build is not used here. -->
+  <script src="./z3-st.js"></script>
 </head>
 <body>
 <h3>Phase 1 gate: .NET boots from inline store, zero /_framework/ requests</h3>
@@ -95,31 +97,11 @@ try {
   log(`dotnet.create in ${Math.round(performance.now() - tBoot)} ms; ` +
       `${servedFromStore.length} assets served from store`);
 
-  const { init } = await import("../z3-api.js");
-  const z3 = await init({
-    locateFile: file => new URL(`../z3/${file}`, location.href).href,
-    mainScriptUrlOrBlob: new URL("../z3/z3-built.js", location.href).href
-  });
-  const contexts = new Map();
-  runtime.setModuleImports("dafnyZ3", {
-    evaluate: async (solverId, smtLib) => {
-      let context = contexts.get(solverId);
-      if (!context) {
-        const config = z3.Z3.mk_config();
-        context = z3.Z3.mk_context_rc(config);
-        z3.Z3.del_config(config);
-        contexts.set(solverId, context);
-      }
-      return z3.Z3.eval_smtlib2_string(context, smtLib);
-    },
-    close: solverId => {
-      const context = contexts.get(solverId);
-      if (context) {
-        z3.Z3.del_context(context);
-        contexts.delete(solverId);
-      }
-    }
-  });
+  const { createZ3StTransport } = await import("./z3-st-transport.js");
+  const wasmBinary = new Uint8Array(
+    await (await fetch("./z3-st.wasm")).arrayBuffer());
+  runtime.setModuleImports("dafnyZ3",
+    createZ3StTransport({ createZ3: globalThis.createZ3, wasmBinary }));
 
   const config = runtime.getConfig();
   await runtime.runMain(config.mainAssemblyName, []);

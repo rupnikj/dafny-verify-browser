@@ -81,6 +81,8 @@ jobs:
 
       - name: Browser gates (demo, inline boot, artifact)
         working-directory: prototype
+        env:
+          Z3_ST_DIR: ${{ github.workspace }}/z3-st-dist
         run: npm run test:browser
 
       - name: Upload the single-file verifier
