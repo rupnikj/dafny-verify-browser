@@ -31,7 +31,8 @@ static async Task<object> Verify(string name, string source) {
   var options = DafnyOptions.CreateUsingOldParser(output, TextReader.Null);
   options.VcsCores = 1;
   options.DafnyPrelude = Path.GetFullPath("../../upstream-dafny/Source/DafnyCore/DafnyPrelude.bpl");
-  options.ProverOptions.Add("PROVER_PATH=/opt/homebrew/bin/z3");
+  options.ProverOptions.Add("PROVER_PATH=" +
+    (Environment.GetEnvironmentVariable("DAFNY_NATIVE_Z3") ?? "z3"));
   options.ProverLogFilePath = Path.GetFullPath($"logs/{name}.smt2");
   var reporter = new BatchErrorReporter(options);
   options.ProcessSolverOptions(reporter, Microsoft.Dafny.Token.NoToken);

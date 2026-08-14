@@ -122,7 +122,9 @@ dev server here) it does nothing.
 
 ## Building and testing locally
 
-Prerequisites: .NET 8 SDK with the `wasm-tools` workload, Node.js 22+.
+Prerequisites: .NET 8 SDK with the `wasm-tools` workload, Node.js 22+. If the
+`dotnet` on your PATH is a different SDK version, set `DAFNY_BROWSER_DOTNET`
+to a .NET 8 SDK's `dotnet` binary before building.
 
 ```sh
 # One-time: fetch pinned Dafny sources and apply the compat patch

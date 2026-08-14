@@ -1,5 +1,5 @@
 {
-  "name": "dafny-browser-wasm-poc",
+  "name": "dafny-verify-browser",
   "private": true,
   "type": "module",
   "scripts": {

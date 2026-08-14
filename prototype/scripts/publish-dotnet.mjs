@@ -1,9 +1,8 @@
-import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 
-const workspaceDotnet8 = "/opt/homebrew/Cellar/dotnet@8/8.0.129/libexec/dotnet";
-const dotnet = process.env.DAFNY_BROWSER_DOTNET ??
-  (existsSync(workspaceDotnet8) ? workspaceDotnet8 : "dotnet");
+// The publish targets net8.0; if your default `dotnet` is a different SDK,
+// point DAFNY_BROWSER_DOTNET at a .NET 8 SDK's dotnet binary.
+const dotnet = process.env.DAFNY_BROWSER_DOTNET ?? "dotnet";
 
 const child = spawn(dotnet, [
   "publish",
