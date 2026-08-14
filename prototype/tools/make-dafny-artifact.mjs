@@ -27,9 +27,15 @@ const brotli = bytes => brotliCompressSync(bytes, {
   }
 });
 
+// Sandbox finding: in srcdoc-rendered artifacts no URL of any scheme loads
+// (blob:, data:, and <script src> are all blocked), but INJECTED inline
+// scripts — classic and module — execute. So the loader modules travel
+// inside the brotli bundle (transformed for the inline registry) and the
+// boot code injects them as inline <script type="module"> elements.
 const { bundle, fileCount, rawBytes, bootConfigBytes } = await buildFrameworkBundle(frameworkRoot, {
   includeSatellites: false,
-  compression: "none"
+  compression: "none",
+  inlineRegistry: true
 });
 const frameworkBr = brotli(bundle);
 const z3Glue = await readFile(join(z3StDir, "z3-st.js"), "utf8");

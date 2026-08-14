@@ -151,6 +151,16 @@ same (`tools/bundle-lib.mjs`, `tools/dafny-artifact-template.html`):
 3. The `withResourceLoader` hook only honors a `Promise` or a URL-string
    return; a bare `Response` object is silently ignored and the loader falls
    back to the network.
+4. The hardest sandboxes (srcdoc-rendered iframes) load **no script URL of
+   any scheme** — `import(blobUrl)`, `import("data:...")`, and
+   `<script src>` are all blocked, and `document.baseURI` is `about:srcdoc`,
+   an invalid URL base. What still works: script text literally present in
+   the document and *injected* inline scripts (classic and module). The
+   build therefore transforms the loader modules to register their exports
+   in a global registry, rewrites `dotnet.js`'s dynamic `import()` sites to
+   consult it, injects the modules as inline `<script type="module">`
+   elements at boot, and uses a synthetic unresolvable base
+   (`https://inline.invalid/`) for all URL math.
 
 To build it: `Z3_ST_DIR=/path/to/z3-inline/dist node tools/make-dafny-artifact.mjs`
 (z3-st assets come from a [z3-inline release](https://github.com/rupnikj/z3-inline/releases)).
@@ -190,7 +200,7 @@ checkout are never committed.
 | --- | --- |
 | `npm run test:wasm` | Two-program smoke test: `Abs` verifies, `Bad` fails with the right diagnostic |
 | `npm run test:module` | The standalone ES module surface |
-| `npm run test:browser` | Real Chromium (Playwright): the demo through its worker + COI path, the inline zero-network boot, and the single-file artifact |
+| `npm run test:browser` | Real Chromium (Playwright): the demo through its worker + COI path, the inline zero-network boot, and the single-file artifact inside a srcdoc iframe under a sandbox-faithful CSP (no blob:/data:/external scripts, no network) |
 | `node test/inline-parity.mjs` | Threaded z3 vs single-threaded z3-st: identical verdicts and SMT input hashes |
 
 Two generic harnesses are included for testing at scale:

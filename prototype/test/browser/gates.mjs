@@ -5,7 +5,7 @@
 //
 // Usage: node test/browser/gates.mjs  (spawns server.mjs on a scratch port)
 import { spawn } from "node:child_process";
-import { copyFile, access } from "node:fs/promises";
+import { copyFile, access, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -96,38 +96,55 @@ await gate("inline-boot: zero-network .NET boot verifies", async page => {
   }
 });
 
-// Single-threaded tier: the assembled artifact end to end.
+// Single-threaded tier: the assembled artifact, hosted the way the hostile
+// sandbox hosts it — inside a srcdoc iframe (base URI about:srcdoc) under a
+// CSP that blocks script URLs of every scheme (blob:, data:, http) and all
+// network fetches except data:. A localhost page without these restrictions
+// would pass builds that fail in the real sandbox.
 if (withArtifact) {
-  await gate("artifact: single-file tier verdicts (abs/bad/max)", async page => {
+  const artifactHtml = await readFile(artifactSource, "utf8");
+  const wrapper = `<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src data:; worker-src 'none'; object-src 'none'">
+<title>artifact sandbox wrapper</title></head>
+<body style="margin:0">
+<iframe id="host" style="width:100vw;height:100vh;border:0" srcdoc="${
+    artifactHtml.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>
+</body></html>`;
+  await writeFile(resolve(prototypeRoot, "dist/wwwroot/artifact-sandbox-wrapper.html"), wrapper);
+
+  await gate("artifact: srcdoc+CSP sandbox verdicts (abs/bad/max)", async page => {
     const requests = [];
     page.on("request", request => {
       const url = request.url();
-      if (!url.startsWith("blob:") && !url.startsWith("data:") && !url.includes("dafny-artifact.html")) {
+      if (!url.startsWith("data:") && !url.includes("artifact-sandbox-wrapper.html")) {
         requests.push(url);
       }
     });
-    await page.goto(base + "/dafny-artifact.html", { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(
-      () => document.querySelector("#status").textContent.startsWith("ready") ||
-            document.querySelector("#status").classList.contains("err"),
+    await page.goto(base + "/artifact-sandbox-wrapper.html", { waitUntil: "domcontentloaded" });
+    const host = await page.waitForSelector("#host");
+    const frame = await host.contentFrame();
+    await frame.waitForFunction(
+      () => document.querySelector("#status")?.textContent.startsWith("ready") ||
+            document.querySelector("#status")?.classList.contains("err"),
       undefined, { timeout: BOOT_TIMEOUT });
-    const bootStatus = await page.locator("#status").textContent();
+    const bootStatus = await frame.locator("#status").textContent();
     if (!bootStatus.startsWith("ready")) throw new Error(bootStatus);
 
     for (const [example, expectClass] of [["abs", "ok"], ["bad", "bad"], ["max", "ok"]]) {
-      await page.selectOption("#example", example);
-      await page.click("#verify");
-      await page.waitForFunction(
+      await frame.selectOption("#example", example);
+      await frame.click("#verify");
+      await frame.waitForFunction(
         () => document.querySelector("#verdict").textContent.length > 0,
         undefined, { timeout: BOOT_TIMEOUT });
-      const cls = await page.locator("#verdict").getAttribute("class");
+      const cls = await frame.locator("#verdict").getAttribute("class");
       if (cls !== expectClass) {
         throw new Error(example + ": expected " + expectClass + ", got " + cls +
-          " (" + await page.locator("#verdict").textContent() + ")");
+          " (" + await frame.locator("#verdict").textContent() + ")");
       }
     }
     if (requests.length) {
-      throw new Error("unexpected network requests: " + requests.join(", "));
+      throw new Error("unexpected network requests: " + requests.slice(0, 5).join(", "));
     }
   });
 }

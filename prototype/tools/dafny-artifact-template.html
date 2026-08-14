@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Artifacts can render in a srcdoc iframe where document.baseURI is
+     about:srcdoc — not a valid URL base. Nothing here is ever fetched by
+     URL; this base just keeps URL resolution from throwing. -->
+<base href="https://inline.invalid/_framework/">
 <title>Dafny Verify — inline</title>
 <style>
   body { font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; background: #12161c; color: #d8dee9; margin: 0; padding: 16px; }
@@ -46,6 +50,28 @@ Built __BUILD_STAMP__.</div>
 
 <script>__Z3_GLUE__</script>
 <script>__BROTLI_DECODER__</script>
+<script>
+// Inline module registry: in the artifact sandbox no URL of any scheme loads
+// (blob:, data:, and <script src> are all blocked), so the .NET loader
+// modules are inlined below and register their exports here. The synthetic
+// base keeps the loader's URL math valid; nothing resolves against it.
+globalThis.__dotnetInlineBase = "https://inline.invalid/_framework/dotnet.js";
+globalThis.__inlineModules = new Map();
+globalThis.__inlineWaiters = new Map();
+globalThis.__inlineRegister = (name, moduleExports) => {
+  globalThis.__inlineModules.set(name, moduleExports);
+  const waiter = globalThis.__inlineWaiters.get(name);
+  if (waiter) {
+    globalThis.__inlineWaiters.delete(name);
+    waiter(moduleExports);
+  }
+};
+globalThis.__inlineImport = name => {
+  const found = globalThis.__inlineModules.get(name);
+  if (found) return Promise.resolve(found);
+  return new Promise(resolveWaiter => globalThis.__inlineWaiters.set(name, resolveWaiter));
+};
+</script>
 <script type="text/plain" id="fw-b64">__FRAMEWORK_B64__</script>
 <script type="text/plain" id="z3-b64">__Z3_WASM_B64__</script>
 
@@ -107,7 +133,18 @@ async function boot() {
   }
 
   setStatus("booting .NET runtime (" + store.size + " assemblies)…"); await paint();
-  const blobUrl = (bytes, type) => URL.createObjectURL(new Blob([bytes], { type }));
+  // Inject the loader modules (transformed at build time to register their
+  // exports) as inline <script type="module"> elements — the only script
+  // delivery the sandbox allows besides literal document text.
+  for (const file of manifest.files) {
+    if (/^dotnet(\.native|\.runtime)?(\.[\w.]+)?\.js$/.test(file.name)) {
+      const element = document.createElement("script");
+      element.type = "module";
+      element.textContent = new TextDecoder().decode(store.get(file.name));
+      document.head.append(element);
+    }
+  }
+
   const lookup = (name, defaultUri) => {
     const direct = store.get(name);
     if (direct) return { key: name, bytes: direct };
@@ -120,19 +157,23 @@ async function boot() {
     return null;
   };
   const loadBootResource = (type, name, defaultUri) => {
+    if (type.startsWith("js-module") || type === "dotnetjs" || name.endsWith(".js") || name.endsWith(".mjs")) {
+      // Modules load via the inline registry; the loader stores this string
+      // as resolvedUrl and never fetches it.
+      return defaultUri || name;
+    }
     const found = lookup(name, defaultUri);
     if (!found) return undefined;
-    if (type.startsWith("js-module") || type === "dotnetjs" || name.endsWith(".js") || name.endsWith(".mjs")) {
-      return blobUrl(found.bytes, "text/javascript");
-    }
     // The loader only honors a Promise or URL string; a bare Response is ignored.
     return Promise.resolve(new Response(found.bytes, {
-      headers: { "content-type": "application/octet-stream", "content-length": String(found.bytes.byteLength) }
+      headers: {
+        "content-type": name.endsWith(".wasm") ? "application/wasm" : "application/octet-stream",
+        "content-length": String(found.bytes.byteLength)
+      }
     }));
   };
 
-  globalThis.__dotnetInlineBase = location.href;
-  const { dotnet } = await import(blobUrl(store.get("dotnet.js"), "text/javascript"));
+  const { dotnet } = await globalThis.__inlineImport("dotnet.js");
   const runtime = await dotnet
     .withConfigSrc("__BOOT_CONFIG_DATA_URL__")
     .withResourceLoader(loadBootResource)
