@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dafny Verify — inline</title>
+<style>
+  body { font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; background: #12161c; color: #d8dee9; margin: 0; padding: 16px; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { color: #7d8896; font-size: 11px; margin-bottom: 10px; }
+  #status { color: #9fb3c8; margin: 8px 0; min-height: 18px; }
+  #status.err { color: #ff7b72; white-space: pre-wrap; }
+  textarea { width: 100%; box-sizing: border-box; height: 260px; background: #151a21; color: #d8dee9;
+    border: 1px solid #303946; border-radius: 6px; padding: 10px; font: inherit; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  button, select { font: inherit; background: #1d2430; color: #d8dee9; border: 1px solid #3b4655;
+    border-radius: 6px; padding: 6px 14px; }
+  button:disabled { opacity: .45; }
+  button#verify { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  #verdict.ok { color: #7ce38b; } #verdict.bad { color: #ff7b72; }
+  ul { margin: 6px 0; padding-left: 18px; } li { margin: 2px 0; }
+  #timings { color: #7d8896; font-size: 11px; white-space: pre-wrap; }
+  .note { color: #7d8896; font-size: 11px; margin-top: 14px; border-top: 1px solid #262e3a; padding-top: 8px; }
+</style>
+</head>
+<body>
+<h1>Dafny Verify — inline single-file build</h1>
+<div class="sub">Dafny 4.11.1 + Boogie 3.5.5 on .NET WASM, single-threaded Z3 __Z3_VERSION__ — everything in this file, zero network.</div>
+<div id="status">booting…</div>
+<textarea id="source" spellcheck="false"></textarea>
+<div class="row">
+  <select id="example">
+    <option value="abs">Abs (verifies)</option>
+    <option value="bad">Bad (fails)</option>
+    <option value="max">MaxArray (loop invariants)</option>
+  </select>
+  <button id="verify" disabled>Verify</button>
+  <span id="verdict"></span>
+</div>
+<ul id="problems"></ul>
+<div id="timings"></div>
+<div class="note">Single-threaded tier: verification runs on the page thread, so the UI freezes until the verdict —
+expected and by design (this build targets sandboxes without workers). Heavy proofs can take minutes.
+Solver exchanges replay the session per query (soft timeout __SOFT_TIMEOUT_MS__ ms per check).
+Built __BUILD_STAMP__.</div>
+
+<script>__Z3_GLUE__</script>
+<script type="text/plain" id="fw-b64">__FRAMEWORK_B64__</script>
+<script type="text/plain" id="z3-b64">__Z3_WASM_B64__</script>
+
+<script type="module">
+__TRANSPORT_JS__
+
+const $ = id => document.getElementById(id);
+const statusEl = $("status");
+const paint = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+const setStatus = (message, isError) => {
+  statusEl.textContent = message;
+  statusEl.className = isError ? "err" : "";
+};
+
+const EXAMPLES = {
+  abs: "method Abs(x: int) returns (y: int)\n  ensures y >= 0\n{\n  if x < 0 { y := -x; } else { y := x; }\n}\n",
+  bad: "method Bad(x: int) returns (y: int)\n  ensures y > x\n{\n  y := x;\n}\n",
+  max: "method MaxArray(a: array<int>) returns (m: int)\n  requires a.Length > 0\n  ensures forall i :: 0 <= i < a.Length ==> a[i] <= m\n  ensures exists i :: 0 <= i < a.Length && a[i] == m\n{\n  m := a[0];\n  var j := 1;\n  while j < a.Length\n    invariant 1 <= j <= a.Length\n    invariant forall i :: 0 <= i < j ==> a[i] <= m\n    invariant exists i :: 0 <= i < j && a[i] == m\n  {\n    if a[j] > m { m := a[j]; }\n    j := j + 1;\n  }\n}\n"
+};
+$("source").value = EXAMPLES.abs;
+$("example").addEventListener("change", () => { $("source").value = EXAMPLES[$("example").value] ?? ""; });
+
+function decodeBase64(elementId) {
+  const b64 = $(elementId).textContent.trim();
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function gunzip(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+let verifyExport = null;
+
+async function boot() {
+  const stamps = [["start", performance.now()]];
+  const mark = label => { stamps.push([label, performance.now()]); };
+
+  setStatus("decoding payloads…"); await paint();
+  const frameworkGz = decodeBase64("fw-b64");
+  const z3Gz = decodeBase64("z3-b64");
+  mark("base64 decode");
+
+  setStatus("decompressing…"); await paint();
+  const inflated = await gunzip(frameworkGz);
+  const wasmBinary = await gunzip(z3Gz);
+  mark("gunzip");
+
+  const view = new DataView(inflated.buffer, inflated.byteOffset, inflated.byteLength);
+  const manifestLength = view.getUint32(0, true);
+  const manifest = JSON.parse(new TextDecoder().decode(inflated.subarray(4, 4 + manifestLength)));
+  const payloadBase = 4 + manifestLength;
+  const store = new Map();
+  for (const file of manifest.files) {
+    store.set(file.name, inflated.subarray(payloadBase + file.offset, payloadBase + file.offset + file.size));
+  }
+
+  setStatus("booting .NET runtime (" + store.size + " assemblies)…"); await paint();
+  const blobUrl = (bytes, type) => URL.createObjectURL(new Blob([bytes], { type }));
+  const lookup = (name, defaultUri) => {
+    const direct = store.get(name);
+    if (direct) return { key: name, bytes: direct };
+    const segments = String(defaultUri ?? "").split("?")[0].split("/").filter(Boolean);
+    for (let take = 2; take <= 3 && take <= segments.length; take++) {
+      const key = segments.slice(-take).join("/");
+      const bytes = store.get(key);
+      if (bytes) return { key, bytes };
+    }
+    return null;
+  };
+  const loadBootResource = (type, name, defaultUri) => {
+    const found = lookup(name, defaultUri);
+    if (!found) return undefined;
+    if (type.startsWith("js-module") || type === "dotnetjs" || name.endsWith(".js") || name.endsWith(".mjs")) {
+      return blobUrl(found.bytes, "text/javascript");
+    }
+    // The loader only honors a Promise or URL string; a bare Response is ignored.
+    return Promise.resolve(new Response(found.bytes, {
+      headers: { "content-type": "application/octet-stream", "content-length": String(found.bytes.byteLength) }
+    }));
+  };
+
+  globalThis.__dotnetInlineBase = location.href;
+  const { dotnet } = await import(blobUrl(store.get("dotnet.js"), "text/javascript"));
+  const runtime = await dotnet
+    .withConfigSrc("__BOOT_CONFIG_DATA_URL__")
+    .withResourceLoader(loadBootResource)
+    .create();
+  mark("dotnet.create");
+
+  const transport = createZ3StTransport({
+    createZ3: globalThis.createZ3,
+    wasmBinary,
+    softTimeoutMs: __SOFT_TIMEOUT_MS__
+  });
+  runtime.setModuleImports("dafnyZ3", transport);
+
+  setStatus("starting Dafny pipeline…"); await paint();
+  const config = runtime.getConfig();
+  await runtime.runMain(config.mainAssemblyName, []);
+  const exports = await runtime.getAssemblyExports(config.mainAssemblyName);
+  verifyExport = exports.DafnyBrowser.BrowserApi.Verify;
+  mark("runtime ready");
+
+  const total = stamps[stamps.length - 1][1] - stamps[0][1];
+  $("timings").textContent = "boot: " + stamps.slice(1).map(([label, at], index) =>
+    label + " " + Math.round(at - stamps[index][1]) + "ms").join(" · ") +
+    " · total " + Math.round(total) + "ms";
+  setStatus("ready — all verification is local to this page");
+  $("verify").disabled = false;
+}
+
+async function runVerification() {
+  const button = $("verify");
+  button.disabled = true;
+  $("verdict").textContent = "";
+  $("verdict").className = "";
+  $("problems").replaceChildren();
+  setStatus("verifying… (page freezes until the verdict — single-threaded by design)");
+  await paint();
+  const started = performance.now();
+  try {
+    const result = JSON.parse(await verifyExport($("source").value));
+    const seconds = ((performance.now() - started) / 1000).toFixed(1);
+    const verdictEl = $("verdict");
+    verdictEl.className = result.verified ? "ok" : "bad";
+    verdictEl.textContent = result.verified
+      ? "✓ verified (" + result.verifiedCount + " obligations, " + result.smtExchangeCount + " SMT exchanges, " + seconds + "s)"
+      : "✗ " + result.errorCount + " error(s) (" + result.smtExchangeCount + " SMT exchanges, " + seconds + "s)";
+    for (const diagnostic of result.diagnostics ?? []) {
+      const item = document.createElement("li");
+      item.textContent = (diagnostic.line ? diagnostic.line + ":" + (diagnostic.column ?? 1) + " " : "") +
+        diagnostic.severity + ": " + diagnostic.message;
+      $("problems").append(item);
+    }
+    setStatus("done");
+  } catch (error) {
+    setStatus("verification failed: " + (error?.stack ?? String(error)), true);
+  } finally {
+    button.disabled = false;
+  }
+}
+$("verify").addEventListener("click", runVerification);
+
+boot().catch(error => setStatus("boot failed: " + (error?.stack ?? String(error)), true));
+</script>
+</body>
+</html>
