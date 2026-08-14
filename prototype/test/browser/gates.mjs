@@ -58,8 +58,13 @@ async function gate(name, run) {
     console.log("PASS " + name);
   } catch (error) {
     results.push({ name, ok: false });
-    console.log("FAIL " + name + " — " + (error?.message ?? error));
-    if (errors.length) console.log("  page errors: " + errors.slice(0, 5).join(" | "));
+    const detail = (error?.message ?? String(error)) +
+      (errors.length ? " | page errors: " + errors.slice(0, 5).join(" | ") : "");
+    console.log("FAIL " + name + " — " + detail);
+    // Surface the failure as a GitHub annotation (readable via the API even
+    // when job logs are not). Annotations are single-line.
+    console.log("::error::browser gate failed: " + name + " — " +
+      detail.replaceAll("\n", " ⏎ ").slice(0, 800));
   } finally {
     await page.close();
   }
