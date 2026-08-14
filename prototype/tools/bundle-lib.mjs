@@ -21,8 +21,26 @@ export function patchLoaderScript(bytes) {
 
 export async function buildFrameworkBundle(frameworkRoot, {
   includeSatellites = true,
-  gzipLevel = 6
+  gzipLevel = 6,
+  // Optional allowlist of assembly simple names ("DafnyCore"). When given,
+  // assemblies outside the list are dropped from both the bundle and the
+  // boot config, so the loader never requests them.
+  keepAssemblies = null
 } = {}) {
+  const bootConfig = JSON.parse(
+    await readFile(resolve(frameworkRoot, "blazor.boot.json"), "utf8"));
+  const assemblyFiles = new Set(Object.keys(bootConfig.resources.assembly ?? {}));
+  const keep = keepAssemblies ? new Set(keepAssemblies) : null;
+  if (keep) {
+    bootConfig.resources.assembly = Object.fromEntries(
+      Object.entries(bootConfig.resources.assembly)
+        .filter(([file]) => keep.has(file.replace(/\.(wasm|dll)$/, ""))));
+  }
+  if (!includeSatellites) {
+    bootConfig.resources.satelliteResources = {};
+  }
+  const bootConfigBytes = Buffer.from(JSON.stringify(bootConfig), "utf8");
+
   const entries = await readdir(frameworkRoot, { recursive: true, withFileTypes: true });
   const names = entries
     .filter(entry => entry.isFile() && !entry.name.endsWith(".br") && !entry.name.endsWith(".gz"))
@@ -30,6 +48,8 @@ export async function buildFrameworkBundle(frameworkRoot, {
       .slice(frameworkRoot.length + 1)
       .split("\\").join("/"))
     .filter(name => includeSatellites || !name.includes("/"))
+    .filter(name => !keep || !assemblyFiles.has(name) ||
+      keep.has(name.replace(/\.(wasm|dll)$/, "")))
     .sort();
 
   const files = [];
@@ -39,6 +59,8 @@ export async function buildFrameworkBundle(frameworkRoot, {
     let bytes = await readFile(resolve(frameworkRoot, name));
     if (loaderScriptPattern.test(name)) {
       bytes = patchLoaderScript(bytes);
+    } else if (name === "blazor.boot.json") {
+      bytes = bootConfigBytes;
     }
     files.push({ name, offset, size: bytes.byteLength });
     chunks.push(bytes);
@@ -51,6 +73,7 @@ export async function buildFrameworkBundle(frameworkRoot, {
   return {
     bundle: gzipSync(Buffer.concat([header, manifestBytes, ...chunks]), { level: gzipLevel }),
     fileCount: files.length,
-    rawBytes: offset
+    rawBytes: offset,
+    bootConfigBytes
   };
 }

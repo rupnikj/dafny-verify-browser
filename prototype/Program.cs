@@ -95,6 +95,17 @@ public static partial class BrowserApi {
     return JsonSerializer.Serialize(lastSmtTranscript, JsonOptions);
   }
 
+  // Diagnostic for the inline tier's assembly trimming: which assemblies are
+  // actually loaded after exercising the pipeline.
+  [JSExport]
+  public static string GetLoadedAssemblies() {
+    return JsonSerializer.Serialize(AppDomain.CurrentDomain.GetAssemblies()
+      .Where(assembly => !assembly.IsDynamic)
+      .Select(assembly => assembly.GetName().Name)
+      .OrderBy(name => name)
+      .ToArray());
+  }
+
   private static (DafnyOptions Options, BatchErrorReporter Reporter, DafnyConsolePrinter Printer) CreatePipeline() {
     // Dafny's legacy option registry is populated by this static constructor.
     // It must run before Parse applies defaults, or the first request silently

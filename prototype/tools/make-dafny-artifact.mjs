@@ -17,11 +17,19 @@ const frameworkRoot = resolve(prototypeRoot, "dist/wwwroot/_framework");
 const z3StDir = resolve(process.env.Z3_ST_DIR ?? resolve(prototypeRoot, "../../../z3-inline/dist"));
 const outPath = resolve(prototypeRoot, "dist/dafny-artifact.html");
 
-const { bundle, fileCount, rawBytes } = await buildFrameworkBundle(frameworkRoot, {
+// Trim to the assemblies the runtime actually loads (measured by
+// test/probe-loaded-assemblies.mjs across feature-diverse programs). A program
+// exercising something outside the measured set fails with a clear
+// assembly-load error rather than a wrong verdict.
+const keepAssemblies = JSON.parse(
+  await readFile(resolve(prototypeRoot, "test/loaded-assemblies.json"), "utf8"));
+
+const { bundle, fileCount, rawBytes, bootConfigBytes } = await buildFrameworkBundle(frameworkRoot, {
   includeSatellites: false,
-  gzipLevel: 9
+  gzipLevel: 9,
+  keepAssemblies
 });
-const bootConfig = await readFile(join(frameworkRoot, "blazor.boot.json"));
+const bootConfig = bootConfigBytes;
 const z3Glue = await readFile(join(z3StDir, "z3-st.js"), "utf8");
 const z3Wasm = await readFile(join(z3StDir, "z3-st.wasm"));
 const z3Info = JSON.parse(await readFile(join(z3StDir, "build-info.json"), "utf8"));
