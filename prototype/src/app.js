@@ -457,6 +457,8 @@ let editor;
 document.querySelector("#verify-kbd").textContent =
   /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘↵" : "Ctrl+↵";
 
+let dafnyInstance = null;
+
 const verifierReady = createDafny({
   onProgress({ stage, loadedBytes, totalBytes }) {
     const megabytes = (loadedBytes / (1024 * 1024)).toFixed(0);
@@ -466,10 +468,26 @@ const verifierReady = createDafny({
     const percent = Math.min(99, Math.round((loadedBytes / totalBytes) * 100));
     loadProgress.setAttribute("aria-valuenow", String(percent));
     loadProgressFill.style.width = Math.max(2, percent) + "%";
+  },
+  onRestart(reason) {
+    runtimeDot.className = "status-dot is-loading";
+    runtimeLabel.textContent = reason === "cancelled"
+      ? "Cancelled — restarting verifier…"
+      : "Verifier crashed — restarting…";
+    verifyButton.disabled = true;
+    dafnyInstance?.whenReady().then(() => {
+      runtimeDot.className = "status-dot is-ready";
+      runtimeLabel.textContent = "Verifier ready";
+      verifyButton.disabled = false;
+    }).catch(() => {
+      runtimeDot.className = "status-dot is-error";
+      runtimeLabel.textContent = "Verifier unavailable — reload the page";
+    });
   }
 });
+verifierReady.then(dafny => { dafnyInstance = dafny; });
 const parse = source => verifierReady.then(dafny => dafny.parse(source));
-const verify = source => verifierReady.then(dafny => dafny.verify(source));
+const verify = (source, verifyOptions) => verifierReady.then(dafny => dafny.verify(source, verifyOptions));
 const getLastSmtTranscript = () => verifierReady.then(dafny => dafny.getLastSmtTranscript());
 window.dafny = { parse, verify, getLastSmtTranscript };
 
@@ -624,9 +642,10 @@ problemFilters.addEventListener("click", event => {
 
 function setRunningState(isRunning) {
   running = isRunning;
-  verifyButton.disabled = isRunning;
+  // While running, the button stays enabled and becomes Cancel.
+  verifyButton.disabled = false;
   verifyButton.classList.toggle("is-running", isRunning);
-  verifyLabel.textContent = isRunning ? "Verifying…" : "Verify";
+  verifyLabel.textContent = isRunning ? "Cancel" : "Verify";
 }
 
 function showVerificationResult(result) {
@@ -676,7 +695,11 @@ function showRuntimeError(error) {
 }
 
 async function runVerification() {
-  if (running || verifyButton.disabled) {
+  if (running) {
+    dafnyInstance?.cancel();
+    return;
+  }
+  if (verifyButton.disabled) {
     return;
   }
   setRunningState(true);
@@ -693,9 +716,19 @@ async function runVerification() {
   output.textContent = "Verifying with Dafny, Boogie, and Z3 WASM…";
 
   try {
-    showVerificationResult(await verify(editor.state.doc.toString()));
+    const timeLimitSeconds = Number(document.querySelector("#time-limit").value) || 0;
+    showVerificationResult(await verify(editor.state.doc.toString(), { timeLimitSeconds }));
   } catch (error) {
-    showRuntimeError(error);
+    if (String(error?.message) === "cancelled") {
+      resultSummary.className = "result-summary is-idle";
+      resultIcon.textContent = "◇";
+      resultTitle.textContent = "Cancelled";
+      resultDetail.textContent = "Verification aborted; the verifier is restarting.";
+      verificationStage.textContent = "Cancelled";
+      output.textContent = "Verification cancelled.";
+    } else {
+      showRuntimeError(error);
+    }
   } finally {
     setRunningState(false);
   }

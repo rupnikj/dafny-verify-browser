@@ -26,14 +26,22 @@ function resolveBaseUrl(baseUrl) {
  * The returned API communicates with a Web Worker that owns .NET browser-WASM,
  * Dafny, Boogie, and Z3 WASM. Source code never leaves the browser.
  *
+ * The worker is respawned automatically if it crashes (verification has no
+ * in-pipeline cancellation, so `cancel()` is implemented the same way:
+ * terminate and respawn). In-flight requests reject; the runtime re-downloads
+ * from the browser cache, so a respawn costs seconds, not the first-visit
+ * download. `onRestart(reason)` is called each time a respawn begins.
+ *
  * @param {{
  *   baseUrl?: string | URL,
  *   workerFactory?: (workerUrl: URL) => Worker,
+ *   maxRespawns?: number,
  *   onProgress?: (progress: {
  *     stage: string,
  *     loadedBytes: number,
  *     totalBytes: number
- *   }) => void
+ *   }) => void,
+ *   onRestart?: (reason: "cancelled" | "crashed") => void
  * }} options
  */
 export async function createDafny(options = {}) {
@@ -41,20 +49,14 @@ export async function createDafny(options = {}) {
   const workerUrl = new URL("verification-worker.js", baseUrl);
   const workerFactory = options.workerFactory ??
     (url => new Worker(url, { name: "dafny-browser-verifier" }));
-  const worker = workerFactory(workerUrl);
+  const maxRespawns = options.maxRespawns ?? 3;
 
+  let worker = null;
   let nextRequestId = 1;
-  let ready = false;
+  let readyPromise = null;
   let terminated = false;
-  let fatalError = null;
+  let respawnsLeft = maxRespawns;
   const pending = new Map();
-  let resolveStartup;
-  let rejectStartup;
-
-  const startup = new Promise((resolve, reject) => {
-    resolveStartup = resolve;
-    rejectStartup = reject;
-  });
 
   function rejectPending(error) {
     for (const request of pending.values()) {
@@ -63,73 +65,105 @@ export async function createDafny(options = {}) {
     pending.clear();
   }
 
-  function fail(value, fallbackMessage) {
-    const error = asError(value, fallbackMessage);
-    fatalError = error;
-    rejectStartup(error);
-    rejectPending(error);
-    worker.terminate();
+  function startWorker() {
+    const spawned = workerFactory(workerUrl);
+    let resolveStartup, rejectStartup;
+    const startup = new Promise((resolve, reject) => {
+      resolveStartup = resolve;
+      rejectStartup = reject;
+    });
+    // A rejected startup is always surfaced through call sites; avoid
+    // unhandled-rejection noise when nothing is in flight.
+    startup.catch(() => {});
+
+    spawned.addEventListener("message", event => {
+      const message = event.data;
+      if (message?.type === "ready") {
+        resolveStartup();
+        return;
+      }
+      if (message?.type === "progress") {
+        try {
+          options.onProgress?.(message.detail);
+        } catch {
+          // Progress display failures must not break verification.
+        }
+        return;
+      }
+      if (message?.type === "startup-error") {
+        rejectStartup(asError(message.error, "The Dafny verifier could not start."));
+        return;
+      }
+
+      const request = pending.get(message?.id);
+      if (!request) {
+        return;
+      }
+      pending.delete(message.id);
+      if (message.ok) {
+        request.resolve(message.result);
+      } else {
+        request.reject(asError(message.error, "The Dafny worker request failed."));
+      }
+    });
+
+    spawned.addEventListener("error", event => {
+      handleDeath(spawned, asError(event.error ?? event.message,
+        "The Dafny worker stopped unexpectedly."), rejectStartup);
+    });
+    spawned.addEventListener("messageerror", () => {
+      handleDeath(spawned, new Error("The Dafny worker returned an unreadable message."),
+        rejectStartup);
+    });
+
+    worker = spawned;
+    readyPromise = startup;
+    return startup;
   }
 
-  worker.addEventListener("message", event => {
-    const message = event.data;
-    if (message?.type === "ready") {
-      ready = true;
-      resolveStartup();
-      return;
+  function handleDeath(deadWorker, error, rejectStartup) {
+    if (worker !== deadWorker || terminated) {
+      return; // already superseded by a respawn or shut down
     }
-    if (message?.type === "progress") {
+    deadWorker.terminate();
+    rejectStartup(error);
+    rejectPending(error);
+    if (respawnsLeft > 0) {
+      respawnsLeft--;
       try {
-        options.onProgress?.(message.detail);
-      } catch {
-        // Progress display failures must not break verification.
-      }
-      return;
-    }
-    if (message?.type === "startup-error") {
-      fail(message.error, "The Dafny verifier could not start.");
-      return;
-    }
-
-    const request = pending.get(message?.id);
-    if (!request) {
-      return;
-    }
-    pending.delete(message.id);
-    if (message.ok) {
-      request.resolve(message.result);
+        options.onRestart?.("crashed");
+      } catch {}
+      startWorker();
     } else {
-      request.reject(asError(message.error, "The Dafny worker request failed."));
+      worker = null;
+      readyPromise = Promise.reject(error);
+      readyPromise.catch(() => {});
     }
-  });
+  }
 
-  worker.addEventListener("error", event => {
-    fail(event.error ?? event.message, "The Dafny worker stopped unexpectedly.");
-  });
-
-  worker.addEventListener("messageerror", () => {
-    fail(null, "The Dafny worker returned an unreadable message.");
-  });
-
-  function call(operation, source) {
+  async function call(operation, source, extra) {
     if (terminated) {
-      return Promise.reject(new Error("The Dafny verifier has been terminated."));
+      throw new Error("The Dafny verifier has been terminated.");
     }
-    if (fatalError) {
-      return Promise.reject(fatalError);
+    if (!worker) {
+      throw new Error("The Dafny verifier is not available (worker respawn limit reached).");
     }
-    if (!ready) {
-      return Promise.reject(new Error("The Dafny verifier is not ready."));
+    await readyPromise;
+    // Termination or a worker swap can land while awaiting readiness.
+    if (terminated) {
+      throw new Error("The Dafny verifier has been terminated.");
     }
-
+    if (!worker) {
+      throw new Error("The Dafny verifier is not available (worker respawn limit reached).");
+    }
     const id = nextRequestId++;
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject });
-      worker.postMessage({ id, operation, source });
+      worker.postMessage({ id, operation, source, ...extra });
     });
   }
 
-  await startup;
+  await startWorker();
 
   return Object.freeze({
     parse(source) {
@@ -139,25 +173,55 @@ export async function createDafny(options = {}) {
       return call("parse", source);
     },
 
-    verify(source) {
+    /**
+     * @param {string} source
+     * @param {{ timeLimitSeconds?: number }} verifyOptions per-obligation
+     *   limit like `dafny verify --verification-time-limit`. Omit or 0 for
+     *   the CLI default (30 s); -1 for no limit.
+     */
+    verify(source, verifyOptions = {}) {
       if (typeof source !== "string") {
         return Promise.reject(new TypeError("Dafny source must be a string."));
       }
-      return call("verify", source);
+      const timeLimitSeconds = verifyOptions.timeLimitSeconds ?? 0;
+      return call("verify", source, { timeLimitSeconds });
     },
 
     getLastSmtTranscript() {
       return call("transcript");
     },
 
+    /**
+     * Abort the in-flight verification by recycling the worker. The rejected
+     * in-flight promises carry "cancelled"; readiness is re-established
+     * automatically (served from the browser cache).
+     */
+    cancel() {
+      if (terminated || !worker) {
+        return;
+      }
+      const cancelled = worker;
+      cancelled.terminate();
+      rejectPending(new Error("cancelled"));
+      try {
+        options.onRestart?.("cancelled");
+      } catch {}
+      startWorker();
+    },
+
+    /** Resolves when the (possibly respawned) worker is ready again. */
+    whenReady() {
+      return readyPromise ?? Promise.reject(new Error("The Dafny verifier is not available."));
+    },
+
     terminate() {
       if (terminated) {
         return;
       }
-    terminated = true;
-      const error = new Error("The Dafny verifier has been terminated.");
-      rejectPending(error);
-      worker.terminate();
+      terminated = true;
+      rejectPending(new Error("The Dafny verifier has been terminated."));
+      worker?.terminate();
+      worker = null;
     }
   });
 }

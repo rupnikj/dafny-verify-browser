@@ -5,6 +5,11 @@
     <OutputType>Exe</OutputType>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <WasmMainJSPath>wwwroot/verification-worker.js</WasmMainJSPath>
+    <!-- A handful of official-suite files crash with wasm memory-access
+         errors on deeply recursive verification. Measured: raising
+         EmccStackSize to 64/256 MB does NOT fix them (identical crash), so
+         the limit is Mono-interpreter-level, not the Emscripten C stack;
+         larger values only cost startup memory. Left at SDK defaults. -->
     <PublishTrimmed>false</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Nullable>enable</Nullable>

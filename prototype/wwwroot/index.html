@@ -52,6 +52,15 @@
           <span class="modified-dot" id="modified-dot" title="Modified">●</span>
         </div>
         <div class="toolbar-actions">
+          <label class="example-picker" title="Per-obligation solver time limit (like dafny verify --verification-time-limit)">
+            <span class="sr-only">Verification time limit</span>
+            <select id="time-limit">
+              <option value="10">10s limit</option>
+              <option value="30" selected>30s limit (CLI default)</option>
+              <option value="120">120s limit</option>
+              <option value="-1">no limit</option>
+            </select>
+          </label>
           <label class="example-picker">
             <span class="sr-only">Load example</span>
             <select id="example">

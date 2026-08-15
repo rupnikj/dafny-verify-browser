@@ -32,12 +32,29 @@ public static partial class BrowserApi {
   }
 
   [JSExport]
-  public static async Task<string> Verify(string source) {
+  public static Task<string> Verify(string source) {
+    return VerifyCore(source, 0);
+  }
+
+  // timeLimitSeconds > 0 overrides `--verification-time-limit`; 0 keeps the
+  // CLI default (30 s per obligation at v4.11.0, set in CreatePipeline);
+  // -1 removes the limit entirely.
+  [JSExport]
+  public static Task<string> VerifyWithLimit(string source, int timeLimitSeconds) {
+    return VerifyCore(source, timeLimitSeconds);
+  }
+
+  private static async Task<string> VerifyCore(string source, int timeLimitSeconds) {
     await PipelineLock.WaitAsync();
     var transcript = new SmtTranscriptRecorder();
     try {
       var (options, reporter, printer) = CreatePipeline();
       options.CreateSolver = (_, _) => new BrowserSmtSolver(transcript);
+      if (timeLimitSeconds > 0) {
+        options.TimeLimit = (uint)timeLimitSeconds;
+      } else if (timeLimitSeconds < 0) {
+        options.TimeLimit = 0;
+      }
 
       var (dafnyProgram, stage) = await ParseAndResolve(source, options, reporter);
       if (dafnyProgram == null || reporter.HasErrors) {
@@ -55,6 +72,8 @@ public static partial class BrowserApi {
       var verifiedCount = 0;
       var verificationErrorCount = 0;
       var allVerified = true;
+      var timeoutCount = 0;
+      var outOfResourceCount = 0;
 
       using var engine = new ExecutionEngine(options, new EmptyVerificationResultCache(), TaskScheduler.Default);
       foreach (var (moduleName, boogieProgram) in translatedPrograms) {
@@ -65,10 +84,22 @@ public static partial class BrowserApi {
         verificationErrorCount += statistics.ErrorCount + statistics.InconclusiveCount +
                                   statistics.TimeoutCount + statistics.OutOfResourceCount +
                                   statistics.OutOfMemoryCount + statistics.SolverExceptionCount;
+        timeoutCount += statistics.TimeoutCount;
+        outOfResourceCount += statistics.OutOfResourceCount;
         allVerified &= DafnyMain.IsBoogieVerified(outcome, statistics);
       }
 
       diagnostics.AddRange(VerificationDiagnostics(printer));
+      if (timeoutCount > 0) {
+        diagnostics.Add(new BrowserDiagnostic("error", "verifier",
+          $"{timeoutCount} proof obligation(s) timed out" +
+          (timeLimitSeconds > 0 ? $" (limit {timeLimitSeconds}s per obligation)" : ""),
+          null, null));
+      }
+      if (outOfResourceCount > 0) {
+        diagnostics.Add(new BrowserDiagnostic("error", "verifier",
+          $"{outOfResourceCount} proof obligation(s) ran out of solver resources", null, null));
+      }
       if (!allVerified && diagnostics.All(diagnostic => diagnostic.Severity != "error")) {
         diagnostics.Add(new BrowserDiagnostic(
           "error", "verifier", "Verification did not complete successfully.", null, null));
@@ -136,6 +167,11 @@ public static partial class BrowserApi {
     // silently accepted 37 official-suite programs that `dafny verify`
     // rejects with definite-assignment errors.
     options.DefiniteAssignmentLevel = 4;
+    // BoogieOptionBag.VerificationTimeLimit defaults to 30 (seconds, per
+    // obligation) in the modern CLI; the legacy property default is 0 (no
+    // limit). Found differentially: native reports "timed out after 30
+    // seconds" where the browser hung indefinitely.
+    options.TimeLimit = 30;
     options.UsingNewCli = true;
     options.VcsCores = 1;
     // Diagnostics are returned structurally below. Silent mode prevents the
