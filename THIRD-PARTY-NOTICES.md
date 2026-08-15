@@ -11,7 +11,7 @@ derivative of Dafny source and is likewise covered by Dafny's notice.
 ## Dafny
 
 <https://github.com/dafny-lang/dafny> — pinned at
-`f3c2fedfb2b88272af5b64f5e45d803a3bc0043a` (4.11.1). Compiled to .NET
+`a04eea4dab324219e438f94ccc5ff0abcad11d86` (4.11.0). Compiled to .NET
 browser-wasm assemblies; `DafnyPrelude.bpl` is embedded verbatim as a resource.
 
 > Dafny

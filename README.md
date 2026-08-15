@@ -3,7 +3,7 @@
 [![Build and deploy to Pages](https://github.com/rupnikj/dafny-verify-browser/actions/workflows/deploy.yml/badge.svg)](https://github.com/rupnikj/dafny-verify-browser/actions/workflows/deploy.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-`dafny verify` running entirely in the browser — the real Dafny 4.11.1
+`dafny verify` running entirely in the browser — the real Dafny 4.11.0
 frontend and Boogie 3.5.5 compiled to .NET WebAssembly, driving the official
 Z3 WebAssembly build. No verifier service, no native Z3, and the source you
 type never leaves the page.
@@ -193,7 +193,7 @@ to a .NET 8 SDK's `dotnet` binary before building.
 ```sh
 # One-time: fetch pinned Dafny sources and apply the compat patch
 git clone https://github.com/dafny-lang/dafny.git upstream-dafny
-git -C upstream-dafny checkout f3c2fedfb2b88272af5b64f5e45d803a3bc0043a
+git -C upstream-dafny checkout a04eea4dab324219e438f94ccc5ff0abcad11d86
 git -C upstream-dafny apply ../patches/dafny-browser-compat.patch
 
 cd prototype

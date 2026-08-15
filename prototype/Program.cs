@@ -120,18 +120,21 @@ public static partial class BrowserApi {
     if (!options.Parse([])) {
       throw new InvalidOperationException("Could not initialize Dafny browser options.");
     }
-    // Match the defaults of the modern `dafny verify` CLI (verified against
-    // CommonOptionBag and differentially against a native build of the same
-    // commit). The deprecated parser above otherwise selects the legacy
-    // type-system defaults, which changes resolution verdicts on real
-    // programs (e.g. subset-type tests, general newtypes, trait extension).
-    options.Set(CommonOptionBag.TypeSystemRefresh, true);
-    options.Set(CommonOptionBag.GeneralNewtypes, true);
-    options.Set(CommonOptionBag.GeneralTraits, CommonOptionBag.GeneralTraitsOptions.Datatype);
-    // The new CLI's --relax-definite-assignment defaults to false, which its
-    // binding maps to level 4; the legacy property default is the relaxed
-    // level 1. Found differentially: every verdict disagreement against a
-    // native build of this commit was a missed definite-assignment error.
+    // Match the `dafny verify` CLI defaults OF THE PINNED VERSION — these
+    // are per-version facts, not constants: at v4.11.0 the CLI still
+    // defaults to the legacy type system (TypeSystemRefresh/GeneralNewtypes
+    // false, GeneralTraits Legacy); post-4.11 master flips all three. Any
+    // re-pin must re-read CommonOptionBag and re-run the differential suite
+    // (prototype/test/differential/) against a native build of the same
+    // commit — that suite is the arbiter, not this comment.
+    options.Set(CommonOptionBag.TypeSystemRefresh, false);
+    options.Set(CommonOptionBag.GeneralNewtypes, false);
+    options.Set(CommonOptionBag.GeneralTraits, CommonOptionBag.GeneralTraitsOptions.Legacy);
+    // The CLI's --relax-definite-assignment defaults to false at all pins
+    // considered, and its binding maps that to level 4; the legacy property
+    // default is the relaxed level 1. Found differentially: the browser
+    // silently accepted 37 official-suite programs that `dafny verify`
+    // rejects with definite-assignment errors.
     options.DefiniteAssignmentLevel = 4;
     options.UsingNewCli = true;
     options.VcsCores = 1;

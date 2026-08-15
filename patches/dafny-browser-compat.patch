@@ -1,5 +1,5 @@
 diff --git a/Source/DafnyCore/DafnyMain.cs b/Source/DafnyCore/DafnyMain.cs
-index 07e6b8ce8..a83fbbf1a 100644
+index 07e6b8c..a83fbbf 100644
 --- a/Source/DafnyCore/DafnyMain.cs
 +++ b/Source/DafnyCore/DafnyMain.cs
 @@ -75,8 +75,12 @@ namespace Microsoft.Dafny {
@@ -18,7 +18,7 @@ index 07e6b8ce8..a83fbbf1a 100644
      public static readonly TaskFactory LargeStackFactory = new(CancellationToken.None,
        TaskCreationOptions.DenyChildAttach, TaskContinuationOptions.None, LargeThreadScheduler);
 diff --git a/Source/DafnyCore/DafnyOptions.cs b/Source/DafnyCore/DafnyOptions.cs
-index 9029c3d1a..0cf6c035a 100644
+index a0f611e..39ccd2d 100644
 --- a/Source/DafnyCore/DafnyOptions.cs
 +++ b/Source/DafnyCore/DafnyOptions.cs
 @@ -240,7 +240,19 @@ namespace Microsoft.Dafny {
@@ -43,12 +43,12 @@ index 9029c3d1a..0cf6c035a 100644
      public static DafnyOptions CreateUsingOldParser(TextWriter outputWriter, TextReader input = null, params string[] arguments) {
        input ??= TextReader.Null;
 diff --git a/Source/DafnyRuntime/DafnyRuntime.csproj b/Source/DafnyRuntime/DafnyRuntime.csproj
-index bfe56d97c..a73dd391d 100644
+index af08c92..4c753d2 100644
 --- a/Source/DafnyRuntime/DafnyRuntime.csproj
 +++ b/Source/DafnyRuntime/DafnyRuntime.csproj
 @@ -49,7 +49,8 @@
    <PropertyGroup>
-     <DafnyRuntimeJar>DafnyRuntimeJava/build/libs/DafnyRuntime-4.11.1.jar</DafnyRuntimeJar>
+     <DafnyRuntimeJar>DafnyRuntimeJava/build/libs/DafnyRuntime-4.11.0.jar</DafnyRuntimeJar>
    </PropertyGroup>
 -  <Target Name="BuildDafnyRuntimeJar" AfterTargets="ResolveReferences" BeforeTargets="CoreCompile" Inputs="$(MSBuildProjectFile);@(DafnyRuntimeJavaInputFile)" Outputs="$(DafnyRuntimeJar)">
 +  <Target Name="BuildDafnyRuntimeJar" AfterTargets="ResolveReferences" BeforeTargets="CoreCompile" Inputs="$(MSBuildProjectFile);@(DafnyRuntimeJavaInputFile)" Outputs="$(DafnyRuntimeJar)"

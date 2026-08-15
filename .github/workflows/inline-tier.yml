@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  DAFNY_SHA: f3c2fedfb2b88272af5b64f5e45d803a3bc0043a
+  DAFNY_SHA: a04eea4dab324219e438f94ccc5ff0abcad11d86
   Z3_INLINE_TAG: v0.2.0
 
 jobs:
