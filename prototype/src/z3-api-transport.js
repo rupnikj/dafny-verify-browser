@@ -26,6 +26,7 @@ export function createZ3ApiTransport({ z3, timeoutMs = 0 }) {
   };
 
   const sessions = new Map();
+  let errorResponses = 0;
 
   function open() {
     const cfg = api.mkConfig();
@@ -58,14 +59,34 @@ export function createZ3ApiTransport({ z3, timeoutMs = 0 }) {
       }
 
       const output = api.evalSmtlib(session.ctx, smtLib);
+
+      // Z3 reports command-level problems INSIDE the output, as a
+      // protocol-shaped (error "...") s-expression, which is what the caller
+      // (Boogie) expects to receive and handle. The error code is a mirror of
+      // that, it clears on the next successful call, and the context stays
+      // fully usable (verified: declarations, checks and push/pop all work
+      // after an error). So never throw and never dispose here — doing so
+      // aborts the whole verification. Measured consequence of getting this
+      // wrong: ch10 stopped after 18 of 411 obligations with a bare
+      // "Verification did not complete successfully".
+      if (output) {
+        if (output.startsWith("(error")) {
+          errorResponses++;
+          if (errorResponses <= 5) {
+            console.warn("z3 error response:", output.slice(0, 200).replace(/\s+/g, " "));
+          }
+        }
+        return output;
+      }
+
+      // Empty output with an error set: synthesise the protocol form so the
+      // caller still sees a parseable response rather than silence.
       const code = api.errorCode(session.ctx);
       if (code !== 0) {
-        const message = api.errorMsg(session.ctx, code);
-        sessions.delete(solverId);
-        dispose(session);
-        throw new Error(`z3 error ${code}: ${message}`);
+        const message = (api.errorMsg(session.ctx, code) ?? "unknown").replace(/"/g, "'");
+        return `(error "z3 error ${code}: ${message}")\n`;
       }
-      return output ?? "";
+      return "";
     },
 
     close(solverId) {
@@ -74,9 +95,12 @@ export function createZ3ApiTransport({ z3, timeoutMs = 0 }) {
       dispose(session);
     },
 
-    // Test/diagnostic aid: contexts must not accumulate across verifications.
+    // Test/diagnostic aids.
     get openSessionCount() {
       return sessions.size;
+    },
+    get errorResponseCount() {
+      return errorResponses;
     }
   };
 }

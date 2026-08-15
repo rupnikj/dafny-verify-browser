@@ -42,13 +42,17 @@ const val = await t.evaluate("s3", "(check-sat)(get-value (z))");
 ok("independent session", val.includes("42"), JSON.stringify(val));
 ok("s1 unaffected", (await t.evaluate("s1", "(check-sat)")).includes("unsat"));
 
-// 4. error path: non-fatal, readable, session dropped
-let threw = null;
-try { await t.evaluate("s4", "(assert (bogus))"); } catch (e) { threw = e; }
-ok("error throws", threw !== null, threw);
-ok("error readable", threw && /z3 error \d+:/.test(threw.message), threw?.message);
+// 4. error path: returned as protocol text, session SURVIVES (never throws)
+const badOut = await t.evaluate("s4", "(assert (bogus))");
+ok("error returned not thrown", badOut.includes("(error"), JSON.stringify(badOut));
 const after = await t.evaluate("s4", "(declare-const w Int)(assert (= w 7))(check-sat)(get-value (w))");
-ok("usable after error", after.includes("7"), JSON.stringify(after));
+ok("same session usable after error", after.includes("7"), JSON.stringify(after));
+const badOption = await t.evaluate("s4", "(set-option :nonexistent-thing true)");
+ok("unknown option is an error response", badOption.includes("(error"), JSON.stringify(badOption));
+const afterOption = await t.evaluate("s4", "(check-sat)");
+ok("usable after bad option", afterOption.includes("sat"), JSON.stringify(afterOption));
+const pushPop = await t.evaluate("s4", "(push)(assert false)(check-sat)(pop)(check-sat)");
+ok("push/pop after errors", pushPop.includes("unsat"), JSON.stringify(pushPop));
 
 // 5. get-info / set-option pass through
 ok("get-info version", (await t.evaluate("s5", "(get-info :version)")).includes("5.0"), "");
