@@ -221,10 +221,16 @@ Two generic harnesses are included for testing at scale:
 `test/verify-stdin.mjs` verifies a single `.dfy` file, and
 `test/verify-corpus.mjs <dir>` runs a whole directory of programs expected to
 fail next to a `solutions/` subdirectory expected to verify, hashing each
-file's SMT transcript so encoding drift shows up as a diff. In differential
-testing against native Dafny on a larger private corpus, the browser verifier
-reproduced native verdicts — including a case where native Dafny itself runs
-out of solver resources.
+file's SMT transcript so encoding drift shows up as a diff.
+
+**Fidelity:** measured differentially against a native `DafnyDriver` built
+from the same pinned commit, over 1,311 single-file programs from the
+official Dafny integration test suite: **100% verdict agreement, 97.1%
+exact** (identical counts and error lines), with ~1% infrastructure
+limitations (hangs where cancellation is missing, a few WASM stack-limit
+crashes). Full methodology, the two option-fidelity bugs the campaign found
+and fixed, and the limitations list:
+[`docs/differential-fidelity.md`](docs/differential-fidelity.md).
 
 ## Repository layout
 
