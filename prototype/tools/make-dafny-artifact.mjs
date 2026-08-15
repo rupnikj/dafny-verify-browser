@@ -43,7 +43,9 @@ const z3Wasm = await readFile(join(z3StDir, "z3-st.wasm"));
 const z3Info = JSON.parse(await readFile(join(z3StDir, "build-info.json"), "utf8"));
 const z3WasmBr = brotli(z3Wasm);
 const transport = (await readFile(resolve(prototypeRoot, "src/z3-st-transport.js"), "utf8"))
-  .replace("export function createZ3StTransport", "function createZ3StTransport");
+  .replace("export function createZ3StTransport", "function createZ3StTransport") + "\n" +
+  (await readFile(resolve(prototypeRoot, "src/z3-api-transport.js"), "utf8"))
+    .replace("export function createZ3ApiTransport", "function createZ3ApiTransport");
 
 // Bundle the pure-JS brotli decoder (dev dependency) into a self-contained IIFE.
 const decoder = execFileSync(resolve(prototypeRoot, "node_modules/.bin/esbuild"), [

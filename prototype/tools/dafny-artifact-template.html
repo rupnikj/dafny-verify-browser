@@ -44,9 +44,9 @@
 <ul id="problems"></ul>
 <div id="timings"></div>
 <div class="note">Single-threaded tier: verification runs on the page thread, so the UI freezes until the verdict —
-expected and by design (this build targets sandboxes without workers). Heavy proofs can take minutes.
-Solver exchanges replay the session per query (soft timeout __SOFT_TIMEOUT_MS__ ms per check).
-Built __BUILD_STAMP__.</div>
+expected and by design (this build targets sandboxes without workers). Heavy proofs can take a while.
+Solver timeout __SOFT_TIMEOUT_MS__ ms — applied per check on the incremental (z3-api) transport,
+per replay run on the fallback (z3-replay) transport. Built __BUILD_STAMP__.</div>
 
 <script>__Z3_GLUE__</script>
 <script>__BROTLI_DECODER__</script>
@@ -180,11 +180,21 @@ async function boot() {
     .create();
   mark("dotnet.create");
 
-  const transport = createZ3StTransport({
-    createZ3: globalThis.createZ3,
-    wasmBinary,
-    softTimeoutMs: __SOFT_TIMEOUT_MS__
+  // Prefer the incremental C-API transport (z3-inline >= v0.2.0): persistent
+  // context per session, no replay. Fall back to CLI replay on older assets.
+  const z3Instance = await globalThis.createZ3({
+    wasmBinary, noInitialRun: true, print(){}, printErr(){}
   });
+  const useApi = typeof z3Instance._Z3_eval_smtlib2_string === "function";
+  const transport = useApi
+    ? createZ3ApiTransport({ z3: z3Instance, timeoutMs: __SOFT_TIMEOUT_MS__ })
+    : createZ3StTransport({
+        createZ3: globalThis.createZ3,
+        wasmBinary,
+        softTimeoutMs: __SOFT_TIMEOUT_MS__
+      });
+  globalThis.__dafnyTransport = transport;
+  globalThis.__dafnyTransportName = useApi ? "z3-api" : "z3-replay";
   runtime.setModuleImports("dafnyZ3", transport);
 
   setStatus("starting Dafny pipeline…"); await paint();
@@ -197,7 +207,7 @@ async function boot() {
   const total = stamps[stamps.length - 1][1] - stamps[0][1];
   $("timings").textContent = "boot: " + stamps.slice(1).map(([label, at], index) =>
     label + " " + Math.round(at - stamps[index][1]) + "ms").join(" · ") +
-    " · total " + Math.round(total) + "ms";
+    " · total " + Math.round(total) + "ms · transport " + globalThis.__dafnyTransportName;
   setStatus("ready — all verification is local to this page");
   $("verify").disabled = false;
 }

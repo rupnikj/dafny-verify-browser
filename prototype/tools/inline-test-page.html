@@ -98,10 +98,17 @@ try {
       `${servedFromStore.length} assets served from store`);
 
   const { createZ3StTransport } = await import("./z3-st-transport.js");
+  const { createZ3ApiTransport } = await import("./z3-api-transport.js");
   const wasmBinary = new Uint8Array(
     await (await fetch("./z3-st.wasm")).arrayBuffer());
-  runtime.setModuleImports("dafnyZ3",
-    createZ3StTransport({ createZ3: globalThis.createZ3, wasmBinary }));
+  const z3Instance = await globalThis.createZ3({
+    wasmBinary, noInitialRun: true, print(){}, printErr(){}
+  });
+  const useApi = typeof z3Instance._Z3_eval_smtlib2_string === "function";
+  log("solver transport: " + (useApi ? "z3-api" : "z3-replay"));
+  runtime.setModuleImports("dafnyZ3", useApi
+    ? createZ3ApiTransport({ z3: z3Instance })
+    : createZ3StTransport({ createZ3: globalThis.createZ3, wasmBinary }));
 
   const config = runtime.getConfig();
   await runtime.runMain(config.mainAssemblyName, []);

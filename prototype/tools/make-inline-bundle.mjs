@@ -25,6 +25,8 @@ await copyFile(join(z3StDir, "z3-st.js"), resolve(outRoot, "z3-st.js"));
 await copyFile(join(z3StDir, "z3-st.wasm"), resolve(outRoot, "z3-st.wasm"));
 await copyFile(resolve(prototypeRoot, "src/z3-st-transport.js"),
   resolve(outRoot, "z3-st-transport.js"));
+await copyFile(resolve(prototypeRoot, "src/z3-api-transport.js"),
+  resolve(outRoot, "z3-api-transport.js"));
 
 console.log(`bundled ${fileCount} assets: ${(rawBytes / 1048576).toFixed(1)} MB raw, ` +
   `${(bundle.byteLength / 1048576).toFixed(1)} MB gzipped -> dist/wwwroot/inline-test/`);

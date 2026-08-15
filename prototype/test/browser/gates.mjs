@@ -130,6 +130,8 @@ if (withArtifact) {
       undefined, { timeout: BOOT_TIMEOUT });
     const bootStatus = await frame.locator("#status").textContent();
     if (!bootStatus.startsWith("ready")) throw new Error(bootStatus);
+    const transportName = await frame.evaluate(() => globalThis.__dafnyTransportName);
+    console.log("  transport: " + transportName);
 
     for (const [example, expectClass] of [["abs", "ok"], ["bad", "bad"], ["max", "ok"]]) {
       await frame.selectOption("#example", example);
@@ -152,6 +154,13 @@ if (withArtifact) {
     }
     if (requests.length) {
       throw new Error("unexpected network requests: " + requests.slice(0, 5).join(", "));
+    }
+    // Context-leak check: after three verifications every session must be
+    // closed (the replay transport has no counter; undefined passes).
+    const openSessions = await frame.evaluate(
+      () => globalThis.__dafnyTransport?.openSessionCount);
+    if (openSessions !== undefined && openSessions !== 0) {
+      throw new Error("leaked solver sessions after verifications: " + openSessions);
     }
   });
 }
