@@ -138,9 +138,16 @@ if (withArtifact) {
         () => document.querySelector("#verdict").textContent.length > 0,
         undefined, { timeout: BOOT_TIMEOUT });
       const cls = await frame.locator("#verdict").getAttribute("class");
+      const verdictText = await frame.locator("#verdict").textContent();
       if (cls !== expectClass) {
         throw new Error(example + ": expected " + expectClass + ", got " + cls +
-          " (" + await frame.locator("#verdict").textContent() + ")");
+          " (" + verdictText + ")");
+      }
+      const timing = verdictText.match(/(\d+) SMT exchanges, ([\d.]+)s/);
+      if (timing) {
+        const totalMs = Number(timing[2]) * 1000;
+        console.log(`  ${example}: ${timing[1]} exchanges, ${Math.round(totalMs)} ms, ` +
+          `${(totalMs / Number(timing[1])).toFixed(1)} ms/exchange`);
       }
     }
     if (requests.length) {

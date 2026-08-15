@@ -136,7 +136,14 @@ verification runs on the page thread (the UI freezes until the verdict) and
 the solver is the single-threaded [z3-inline](https://github.com/rupnikj/z3-inline)
 build driven by a session-replay transport (`src/z3-st-transport.js`), which
 reproduces the threaded tier's verdicts and byte-identical SMT-LIB inputs
-(`test/inline-parity.mjs`).
+(`test/inline-parity.mjs`). The transport reuses one solver instance per
+session (measured ~21x over instance-per-exchange; Z3's SMT2 frontend builds
+a fresh context per `main()`, so no state leaks — guarded by
+`npm run test:transport`). The honest limit: each exchange still replays the
+session's whole accumulated script, a quadratic cost. Fine at typical scale
+(~120-exchange sessions verify in about a second), but projected to minutes
+at thousands of exchanges — heavy proof files want either the threaded tier
+or a future incremental (push/pop) transport over Z3's C API.
 
 Three .NET-WASM loader findings this build encodes, for anyone attempting the
 same (`tools/bundle-lib.mjs`, `tools/dafny-artifact-template.html`):
