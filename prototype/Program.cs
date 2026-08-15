@@ -120,12 +120,19 @@ public static partial class BrowserApi {
     if (!options.Parse([])) {
       throw new InvalidOperationException("Could not initialize Dafny browser options.");
     }
-    // Match the defaults used by `dafny verify` and the VS Code language
-    // server. The deprecated CLI parser above otherwise selects its older
-    // type-system defaults.
-    options.Set(CommonOptionBag.TypeSystemRefresh, false);
-    options.Set(CommonOptionBag.GeneralNewtypes, false);
-    options.Set(CommonOptionBag.GeneralTraits, CommonOptionBag.GeneralTraitsOptions.Legacy);
+    // Match the defaults of the modern `dafny verify` CLI (verified against
+    // CommonOptionBag and differentially against a native build of the same
+    // commit). The deprecated parser above otherwise selects the legacy
+    // type-system defaults, which changes resolution verdicts on real
+    // programs (e.g. subset-type tests, general newtypes, trait extension).
+    options.Set(CommonOptionBag.TypeSystemRefresh, true);
+    options.Set(CommonOptionBag.GeneralNewtypes, true);
+    options.Set(CommonOptionBag.GeneralTraits, CommonOptionBag.GeneralTraitsOptions.Datatype);
+    // The new CLI's --relax-definite-assignment defaults to false, which its
+    // binding maps to level 4; the legacy property default is the relaxed
+    // level 1. Found differentially: every verdict disagreement against a
+    // native build of this commit was a missed definite-assignment error.
+    options.DefiniteAssignmentLevel = 4;
     options.UsingNewCli = true;
     options.VcsCores = 1;
     // Diagnostics are returned structurally below. Silent mode prevents the

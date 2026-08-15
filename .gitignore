@@ -21,3 +21,9 @@ prototype/wwwroot/dafny-browser.js
 prototype/wwwroot/dafny-browser.js.map
 
 .DS_Store
+
+# Differential suite outputs (machine-local runs)
+prototype/test/differential/*.jsonl
+prototype/test/differential/*.log
+prototype/test/differential/candidates.json
+prototype/test/differential/comparison-report.txt
