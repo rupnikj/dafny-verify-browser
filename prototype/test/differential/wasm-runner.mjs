@@ -91,6 +91,14 @@ for (const file of files) {
       seconds: (Date.now() - startedAt) / 1000,
       firstError: String(error?.message ?? error).slice(0, 300)
     };
+    // A runtime exit kills .NET for the whole process: recording 'crash' and
+    // continuing would cascade instant failures onto every later file.
+    // Record this one, then die so the driver restarts a fresh runtime.
+    if (/terminated with exit|runtime.*(aborted|exited)/i.test(record.firstError)) {
+      await appendFile(outPath, JSON.stringify(record) + "\n");
+      console.error("runtime died on " + file + " — exiting for driver restart");
+      process.exit(3);
+    }
   }
   await appendFile(outPath, JSON.stringify(record) + "\n");
   if (index % 25 === 0) console.log(`wasm ${index}/${files.length}`);
