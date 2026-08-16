@@ -78,15 +78,18 @@ async function start() {
     import("./_framework/dotnet.js")
   ]);
 
-  // Warm the HTTP cache for the Z3 WASM with a counted fetch; Emscripten's own
-  // request below is then served from cache.
+  // Download the Z3 WASM once with a counted fetch and hand the bytes to
+  // Emscripten directly: the z3-solver 4.16 glue's pthread bootstrap resolves
+  // the wasm against the page root (ignoring locateFile), so relying on a
+  // runtime fetch 404s on any non-root deployment.
   const z3WasmUrl = new URL("./z3/z3-built.wasm", self.location.href).href;
   reportProgress("Downloading Z3 solver");
-  await (await fetchCounted(z3WasmUrl)).arrayBuffer();
+  const z3WasmBytes = new Uint8Array(await (await fetchCounted(z3WasmUrl)).arrayBuffer());
 
   reportProgress("Starting Z3");
   const z3MainScript = new URL("./z3/z3-built.js", self.location.href).href;
   const z3 = await init({
+    wasmBinary: z3WasmBytes,
     locateFile: file => new URL(`./z3/${file}`, self.location.href).href,
     mainScriptUrlOrBlob: z3MainScript
   });

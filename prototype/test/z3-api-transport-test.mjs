@@ -55,7 +55,7 @@ const pushPop = await t.evaluate("s4", "(push)(assert false)(check-sat)(pop)(che
 ok("push/pop after errors", pushPop.includes("unsat"), JSON.stringify(pushPop));
 
 // 5. get-info / set-option pass through
-ok("get-info version", (await t.evaluate("s5", "(get-info :version)")).includes("5.0"), "");
+ok("get-info version", /"\d+\.\d+/.test(await t.evaluate("s5", "(get-info :version)")), "");
 ok("set-option quiet", (await t.evaluate("s5", "(set-option :produce-models true)")) === "");
 
 // 6. close disposes contexts

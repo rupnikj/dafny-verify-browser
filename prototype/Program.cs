@@ -178,7 +178,10 @@ public static partial class BrowserApi {
     // console printer from touching unsupported browser console-color APIs.
     options.Verbosity = CoreOptions.VerbosityLevel.Silent;
     options.DafnyPrelude = EnsureDafnyPrelude();
-    options.SetZ3Options(new Version(5, 0, 0));
+    // Both solver tiers ship Z3 4.16.0 (the version Dafny 4.11 packages and
+    // Homebrew links), so Boogie's SMT encoding is tuned for it. Keep this in
+    // lockstep with the z3-solver npm pin and the z3-inline release tag.
+    options.SetZ3Options(new Version(4, 16, 0));
     var printer = new DafnyConsolePrinter(options);
     options.Printer = printer;
     return (options, new BatchErrorReporter(options), printer);

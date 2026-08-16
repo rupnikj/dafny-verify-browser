@@ -94,13 +94,7 @@ const EXAMPLES = {
 $("source").value = EXAMPLES.abs;
 $("example").addEventListener("change", () => { $("source").value = EXAMPLES[$("example").value] ?? ""; });
 
-function decodeBase64(elementId) {
-  const b64 = $(elementId).textContent.trim();
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
+__BASE85_DECODER__
 
 function brotli(bytes) {
   const decode = typeof __brotliDecode === "function" ? __brotliDecode : __brotliDecode.default;
@@ -114,9 +108,9 @@ async function boot() {
   const mark = label => { stamps.push([label, performance.now()]); };
 
   setStatus("decoding payloads…"); await paint();
-  const frameworkBr = decodeBase64("fw-b64");
-  const z3Br = decodeBase64("z3-b64");
-  mark("base64 decode");
+  const frameworkBr = decodeBase85("fw-b64");
+  const z3Br = decodeBase85("z3-b64");
+  mark("base85 decode");
 
   setStatus("decompressing (brotli)…"); await paint();
   const inflated = brotli(frameworkBr);

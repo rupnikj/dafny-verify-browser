@@ -29,7 +29,7 @@ translation, VC generation, or the SMT encoding needed to change.
 ```
 ┌─────────────────────────── Web Worker ────────────────────────────┐
 │                                                                   │
-│  .NET browser-wasm                          Z3 5.0.0 WASM         │
+│  .NET browser-wasm                          Z3 4.16.0 WASM         │
 │  ┌─────────────────────────────┐            ┌────────────────┐    │
 │  │ Dafny parse → resolve →     │  SMT-LIB   │ eval_smtlib2_  │    │
 │  │ Boogie translate → VC gen   │ ─────────► │ string on one  │    │

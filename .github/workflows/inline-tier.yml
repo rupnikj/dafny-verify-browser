@@ -12,7 +12,7 @@ permissions:
 
 env:
   DAFNY_SHA: a04eea4dab324219e438f94ccc5ff0abcad11d86
-  Z3_INLINE_TAG: v0.2.0
+  Z3_INLINE_TAG: v0.3.0
 
 jobs:
   inline-tier:

@@ -70,7 +70,7 @@ packages and redistributed as compiled browser-wasm assemblies.
 ## Z3
 
 <https://github.com/Z3Prover/z3> — the official WebAssembly build shipped in
-the `z3-solver` npm package, version 5.0.0. Redistributed as `z3-built.js` /
+the `z3-solver` npm package, version 4.16.0 (the Z3 version Dafny 4.11 packages). Redistributed as `z3-built.js` /
 `z3-built.wasm`.
 
 > Z3
