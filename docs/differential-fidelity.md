@@ -29,10 +29,10 @@ SMT encoding is now tuned for the solver actually shipped) and authenticity
   (`a04eea4`, the v4.11.0 release tag), `verify --cores:1`, local Z3 4.16.0,
   90 s wall timeout per file.
 - **WASM side**: the exact published bundle (`dist/wwwroot/_framework`)
-  loaded in Node with threaded Z3 5.0.0 — the same runtime the Pages demo
+  loaded in Node with threaded Z3 4.16.0 — the same runtime the Pages demo
   serves — 180 s stall watchdog, restart-on-runtime-death.
-- The only variables are therefore **platform** (native .NET vs browser-wasm)
-  and **solver version** (Z3 4.16.0 vs 5.0.0).
+- With solver versions matched, the only remaining variable is **platform**
+  (native .NET vs browser-wasm, including its speed).
 - Harness: `prototype/test/differential/`.
 
 ## Results
@@ -55,9 +55,11 @@ deterministic across repeated runs) is the one genuine open divergence in
 the corpus — it involves `{:fuel}` attribute scope tracking in the direct
 in-process API path.
 
-**The 34 detail differences** (identical verdicts): obligation-count and
-error-witness-line wobble from different solver answers feeding Boogie's
-failure-localization splitting — inherent to any solver-version gap.
+**The 38 detail differences** (identical verdicts): obligation-count and
+error-witness-line wobble from run-to-run solver behavior feeding Boogie's
+failure-localization splitting. Measured to persist under matched solver
+versions — this is solver-search nondeterminism across platforms, not a
+version artifact.
 
 ## Three bugs this campaign found (all fixed)
 
@@ -82,11 +84,11 @@ campaign, traced to the browser pipeline's *options* — none to the platform:
 Lesson: "matches native" claims need differential evidence, not comments —
 and the evidence needs re-running at every version pin.
 
-## Measured limitations (the 14 infrastructure cases, ~1.1%)
+## Measured limitations (the 11 infrastructure cases, ~0.8%)
 
 | Failure | Files | Cause |
 | --- | ---: | --- |
-| Stall >180 s in the harness where native completes | 6 | Slow solving under Z3 5.0.0 on this hardware profile; several verify fine standalone. In the demo the time limit plus the Cancel button (worker recycle) bound the damage. |
+| Stall >180 s in the harness where native completes | 6 | Slow solving on this hardware profile; several verify fine standalone. In the demo the time limit plus the Cancel button (worker recycle) bound the damage. |
 | `RuntimeError: memory access/table index out of bounds` | 2 | Deep-recursion crash in the Mono interpreter. Measured: raising the Emscripten stack (64/256 MB) does **not** change it — the limit is interpreter-level, not the C stack. |
 | Z3 WASM process death (`exit(1)`) | 1 | `git-issue-267.dfy` kills the solver; native verifies it clean. The demo recovers via worker auto-respawn. |
 | Runtime `exit(1)` on cyclic-declaration files | 2 | Upstream v4.11.0 bug: the legacy resolver **infinite-loops natively** on the same two files (external kill after 90 s); the WASM build's stack guard turns the same loop into a fast exit. Arguably the better behavior. |
