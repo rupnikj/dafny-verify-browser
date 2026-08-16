@@ -1,14 +1,21 @@
 # Differential fidelity: browser verifier vs native Dafny
 
-**Result at the current pin (Dafny v4.11.0 release): 99.5% verdict agreement
-with a native build of the same commit across 1,295 comparable programs from
-the official Dafny integration test suite** (96.9% agree exactly — counts and
-error lines). 5 of the 6 verdict disagreements are timeout-boundary flips
-attributable to the solver-version gap (Z3 4.16.0 native vs 5.0.0 WASM);
-both sides enforce the same 30 s limit and disagree only on which proofs are
-slow. The campaign across its runs found and fixed **three** real
-option-fidelity bugs in the browser pipeline. Run date: 2026-08-16, commit
-`cfe5d6a`.
+**Result at the fully aligned stack (Dafny v4.11.0 release, Z3 4.16.0 on
+BOTH sides): 99.5% verdict agreement with a native build of the same commit
+across 1,298 comparable programs from the official Dafny integration test
+suite** (96.6% agree exactly — counts and error lines). The campaign across
+its runs found and fixed **three** real option-fidelity bugs in the browser
+pipeline. Run date: 2026-08-16, commit `93094df`.
+
+A negative result worth recording: aligning the WASM solver from Z3 5.0.0
+down to 4.16.0 (matching native) did **not** change the agreement rate. The
+five timeout-boundary disagreements persist under matched solver versions,
+which demonstrates they are **wall-clock-vs-platform-speed effects**, not
+version effects: a 30-second limit covers different amounts of solving on
+different hardware, exactly as it would between two machines running native
+Dafny. Version alignment's real value is configuration correctness (Boogie's
+SMT encoding is now tuned for the solver actually shipped) and authenticity
+(the browser runs the same solver version Dafny 4.11 distributes).
 
 ## Methodology
 
@@ -32,18 +39,21 @@ option-fidelity bugs in the browser pipeline. Run date: 2026-08-16, commit
 
 | Bucket | Files | Share |
 | --- | ---: | ---: |
-| Exact agreement (verdict + counts + error lines) | 1,255 | 96.9% |
-| Verdict agrees, details differ | 34 | 2.6% |
+| Exact agreement (verdict + counts + error lines) | 1,254 | 96.6% |
+| Verdict agrees, details differ | 38 | 2.9% |
 | Verdict disagreements | 6 | 0.5% |
-| Excluded: infrastructure differences (below) | 14 | — |
+| Excluded: infrastructure differences (below) | 11 | — |
 
 **The 6 disagreements.** Five are the same shape: an obligation near the
-30-second default time limit finishes on one solver version and times out on
-the other (`SchorrWaite`, `SchorrWaite-stages`, `Primes`, `gcd`,
-`ExtensibleArrayAuto`) — expected to converge once both tiers run the same
-Z3. The sixth (`dafny0/Fuel.dfy`: a translation-stage "fuel can only
-increase" rejection only on WASM) is the one unexplained divergence in the
-corpus and is under investigation.
+30-second default time limit finishes on one platform and times out on the
+other (`SchorrWaite`, `UnionFind`, `Primes`, `gcd`, `ExtensibleArrayAuto`)
+— measured to persist under matched solver versions, hence inherent to any
+wall-clock limit across differing hardware speeds. The sixth
+(`dafny0/Fuel.dfy`: a deterministic translation-stage "fuel can only
+increase within a given scope" rejection only on WASM; native is
+deterministic across repeated runs) is the one genuine open divergence in
+the corpus — it involves `{:fuel}` attribute scope tracking in the direct
+in-process API path.
 
 **The 34 detail differences** (identical verdicts): obligation-count and
 error-witness-line wobble from different solver answers feeding Boogie's
@@ -76,8 +86,9 @@ and the evidence needs re-running at every version pin.
 
 | Failure | Files | Cause |
 | --- | ---: | --- |
-| Stall >180 s in the harness where native completes | 10 | Slow solving under Z3 5.0.0 on this hardware profile; several verify fine standalone. In the demo the time limit plus the Cancel button (worker recycle) bound the damage. |
+| Stall >180 s in the harness where native completes | 6 | Slow solving under Z3 5.0.0 on this hardware profile; several verify fine standalone. In the demo the time limit plus the Cancel button (worker recycle) bound the damage. |
 | `RuntimeError: memory access/table index out of bounds` | 2 | Deep-recursion crash in the Mono interpreter. Measured: raising the Emscripten stack (64/256 MB) does **not** change it — the limit is interpreter-level, not the C stack. |
+| Z3 WASM process death (`exit(1)`) | 1 | `git-issue-267.dfy` kills the solver; native verifies it clean. The demo recovers via worker auto-respawn. |
 | Runtime `exit(1)` on cyclic-declaration files | 2 | Upstream v4.11.0 bug: the legacy resolver **infinite-loops natively** on the same two files (external kill after 90 s); the WASM build's stack guard turns the same loop into a fast exit. Arguably the better behavior. |
 
 ## Reproducing

@@ -1,0 +1,70 @@
+{
+  "compared": 1298,
+  "infrastructure": 11,
+  "exactAgreement": 1254,
+  "verdictAgreementDetailDiffer": 38,
+  "disagreements": 6,
+  "exactRate": "96.6%",
+  "verdictRate": "99.5%"
+}
+
+-- verdict agrees, details differ --
+{"file":"dafny0/AutoContracts.dfy","class":"errors","nDetail":{"v":36,"e":9,"lines":[17,50,79],"oor":0,"to":0},"wDetail":{"v":37,"e":9,"lines":[17,50,79]}}
+{"file":"dafny0/BitvectorsMore.dfy","class":"errors","nDetail":{"v":8,"e":47,"lines":[13,17,21,25,30,32,54,104,110,115,119,124,130,135,141,146,152,157,163,168,174,193,194],"oor":0,"to":0},"wDetail":{"v":8,"e":47,"lines":[13,17,21,25,30,32,54,104,110,115,116,117,119,127,130,135,141,146,152,157,163,168,169,170,171,172,193,194]}}
+{"file":"dafny0/ControlStructures.dfy","class":"errors","nDetail":{"v":16,"e":22,"lines":[8,17,46,54,75,184,187,190,218,235,238,241,337,340,343,350,381,448],"oor":0,"to":0},"wDetail":{"v":16,"e":22,"lines":[8,17,46,54,75,184,187,190,235,238,241,337,340,343,350,381,448]}}
+{"file":"dafny0/DTypes.dfy","class":"errors","nDetail":{"v":20,"e":7,"lines":[18,56,121,127,137,156,179],"oor":0,"to":0},"wDetail":{"v":22,"e":7,"lines":[18,56,121,127,137,156,179]}}
+{"file":"dafny0/DefaultParameters.dfy","class":"errors","nDetail":{"v":72,"e":74,"lines":[55,63,67,92,102,110,124,131,135,137,140,145,148,150,153,158,160,162,165,170,172,178,179,180,181,194,200,211,219,220,229,235,241,251,258,267,320,326,327,360,361,362,363,365,385,386,387,388,390,416,417,418,419,438,443,447,453,481,493,494,500,520,521,524,548,601],"oor":0,"to":0},"wDetail":{"v":73,"e":74,"lines":[55,63,67,92,102,110,124,131,135,137,140,145,148,150,153,158,160,162,165,170,172,178,179,180,181,194,200,211,219,220,229,235,241,251,258,267,320,326,327,360,361,362,363,365,385,386,387,388,390,416,417,418,419,438,443,447,453,481,493,494,500,520,521,524,548,601]}}
+{"file":"dafny0/Inverses.dfy","class":"errors","nDetail":{"v":31,"e":3,"lines":[68,80,192],"oor":0,"to":0},"wDetail":{"v":31,"e":3,"lines":[68,80,193]}}
+{"file":"dafny0/LegacyConversions.dfy","class":"errors","nDetail":{"v":10,"e":35,"lines":[12,14,21,33,34,43,48,55,60,77,82,85,89,90,97,109,111,112],"oor":0,"to":0},"wDetail":{"v":10,"e":35,"lines":[12,14,21,33,34,43,51,52,55,60,70,74,77,82,84,85,89,90,93,95,97,109,111,112]}}
+{"file":"dafny0/NonZeroInitializationCompile.dfy","class":"errors","nDetail":{"v":13,"e":11,"lines":[44,47,49,51,69,91,94,97,100,103],"oor":0,"to":0},"wDetail":{"v":13,"e":11,"lines":[44,47,49,69,91,94,97,100,103]}}
+{"file":"dafny0/OpaqueFunctions.dfy","class":"errors","nDetail":{"v":18,"e":31,"lines":[38,69,75,77,80,96,98,102,109,111,114,123,146,148,155,157,160,165,181,214,229,246,261,326,328,330,343,350,352,354,367],"oor":0,"to":0},"wDetail":{"v":20,"e":31,"lines":[38,69,75,77,80,96,98,102,109,111,114,123,146,148,155,157,160,165,181,214,229,246,261,326,328,330,343,350,352,354,367]}}
+{"file":"dafny0/Predicates.dfy","class":"errors","nDetail":{"v":16,"e":3,"lines":[62,66,105],"oor":0,"to":0},"wDetail":{"v":21,"e":3,"lines":[62,66,105]}}
+{"file":"dafny0/SubsetTypes.dfy","class":"errors","nDetail":{"v":11,"e":107,"lines":[7,8,10,11,15,16,19,21,23,31,42,44,45,49,51,56,63,64,66,67,71,72,75,77,79,87,98,100,101,106,108,113,122,123,124,125,135,136,141,143,144,157,159,169,182,199,204,213,216,218,230,232,241,243,270,271,272,273,278,279,284,285,286,287,288,302,312,318,323,330,337,342,343,347,348,352,355,360,365,377,379,381,383,385,390,392,394,396,398,401,411,413,429,436,445,452,459,464],"oor":0,"to":0},"wDetail":{"v":11,"e":107,"lines":[7,8,10,11,15,16,19,21,23,31,42,44,45,49,51,56,63,64,66,67,71,72,75,77,79,87,98,100,101,106,108,113,122,123,125,135,136,141,143,144,157,159,169,182,199,204,213,216,218,230,232,241,243,270,271,272,273,278,279,284,285,286,287,288,302,312,318,323,330,337,342,343,347,348,352,355,360,365,377,379,381,383,385,390,392,394,396,398,401,411,413,429,436,445,452,459,464]}}
+{"file":"dafny0/Termination.dfy","class":"errors","nDetail":{"v":105,"e":32,"lines":[108,125,126,255,296,361,441,534,542,549,556,563,571,577,579,589,674,714,722,730,806,1029,1128,1130,1143,1145,1182,1198],"oor":0,"to":0},"wDetail":{"v":93,"e":32,"lines":[108,125,126,255,296,361,441,534,542,549,556,563,571,577,579,589,674,714,722,730,806,1029,1128,1130,1143,1145,1182,1198]}}
+{"file":"dafny0/Twostate-Functions.dfy","class":"errors","nDetail":{"v":18,"e":13,"lines":[11,18,23,66,68,92,97,129,147,164,167,183,186],"oor":0,"to":0},"wDetail":{"v":19,"e":13,"lines":[11,18,23,66,68,92,97,129,147,164,167,183,186]}}
+{"file":"dafny0/Twostate-Verification.dfy","class":"errors","nDetail":{"v":65,"e":42,"lines":[6,12,37,41,56,58,74,271,277,313,337,359,361,384,386,391,393,398,412,414,420,422,447,451,466,470,558,561,564,567,579,582,593,596,599,602,613,616,619,622,635,659],"oor":0,"to":0},"wDetail":{"v":66,"e":42,"lines":[6,12,37,41,56,58,74,271,277,313,337,359,361,384,386,391,393,398,412,414,420,422,447,451,466,470,558,561,564,567,579,582,593,596,599,602,613,616,619,622,635,659]}}
+{"file":"dafny0/TypeConversions.dfy","class":"errors","nDetail":{"v":2,"e":36,"lines":[14,24,30,47,53,66,72,77,83,89,95,106,123,126],"oor":0,"to":0},"wDetail":{"v":2,"e":36,"lines":[14,24,31,47,58,59,60,66,75,77,83,84,85,86,89,95,106,123,126]}}
+{"file":"dafny1/MoreInduction.dfy","class":"errors","nDetail":{"v":26,"e":4,"lines":[78,83,88,93],"oor":0,"to":0},"wDetail":{"v":9,"e":4,"lines":[78,83,88,93]}}
+{"file":"dafny1/Rippling.legacy.dfy","class":"errors","nDetail":{"v":46,"e":45,"lines":[304,307,314,332,337,342,347,352,362,370,377,392,397,402,404,409,414,419,424,429,434,439,444,449,454,459,464,469,474,484,489,494,510,520,542,553,554,562,563,564,566,575,576,577,579,603,605],"oor":0,"to":2},"wDetail":{"v":45,"e":47,"lines":[304,309,314,332,337,342,347,352,362,372,377,392,397,402,404,409,414,419,424,429,434,439,444,449,454,459,464,469,474,484,489,494,510,520,542,553,554,562,563,564,566,575,576,577,579,603,605]}}
+{"file":"dafny1/SchorrWaite-stages.dfy","class":"errors","nDetail":{"v":6,"e":0,"lines":[36],"oor":0,"to":1},"wDetail":{"v":9,"e":1,"lines":[]}}
+{"file":"dafny2/MinWindowMax.dfy","class":"clean","nDetail":{"v":236,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":12,"e":0,"lines":[]}}
+{"file":"dafny2/MonotonicHeapstate.dfy","class":"clean","nDetail":{"v":17,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":24,"e":0,"lines":[]}}
+{"file":"dafny2/StoreAndRetrieve.dfy","class":"clean","nDetail":{"v":16,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":19,"e":0,"lines":[]}}
+{"file":"dafny2/Z-BirthdayBook.dfy","class":"clean","nDetail":{"v":18,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":21,"e":0,"lines":[]}}
+{"file":"dafny3/CachedContainer.dfy","class":"clean","nDetail":{"v":27,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":29,"e":0,"lines":[]}}
+{"file":"dafny3/GenericSort.dfy","class":"clean","nDetail":{"v":20,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":24,"e":0,"lines":[]}}
+{"file":"dafny4/ACL2-extractor.dfy","class":"clean","nDetail":{"v":32,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":22,"e":0,"lines":[]}}
+{"file":"dafny4/SoftwareFoundations-Basics.dfy","class":"errors","nDetail":{"v":53,"e":1,"lines":[41],"oor":0,"to":0},"wDetail":{"v":42,"e":1,"lines":[41]}}
+{"file":"dafny4/git-issue228.dfy","class":"errors","nDetail":{"v":7,"e":7,"lines":[25,26,27,28,29,42,48],"oor":0,"to":0},"wDetail":{"v":7,"e":7,"lines":[24,25,26,27,28,42,48]}}
+{"file":"git-issues/PR4715Test.dfy","class":"clean","nDetail":{"v":2,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":3,"e":0,"lines":[]}}
+{"file":"git-issues/git-issue-1163.dfy","class":"errors","nDetail":{"v":2,"e":5,"lines":[21,23,27,79,83],"oor":0,"to":0},"wDetail":{"v":3,"e":3,"lines":[21,23,27]}}
+{"file":"git-issues/git-issue-1180b.dfy","class":"errors","nDetail":{"v":7,"e":20,"lines":[28,29,34,35,40,41,46,47,56,57,63,64,83,84,103,104,123,124,143,144],"oor":0,"to":0},"wDetail":{"v":13,"e":20,"lines":[28,29,34,35,40,41,46,47,56,57,63,64,83,84,103,104,123,124,143,144]}}
+{"file":"git-issues/git-issue-1207.dfy","class":"errors","nDetail":{"v":0,"e":20,"lines":[10,11,14,15,16,22,23,26,27,28,34,35,38,39,40,47,48,49,50],"oor":0,"to":0},"wDetail":{"v":0,"e":20,"lines":[10,11,14,15,16,22,23,26,27,28,34,35,38,39,40,47,48,49,50,51]}}
+{"file":"git-issues/git-issue-2605.dfy","class":"errors","nDetail":{"v":0,"e":5,"lines":[6,7,11],"oor":0,"to":0},"wDetail":{"v":0,"e":5,"lines":[6,7,9]}}
+{"file":"git-issues/git-issue-3855.dfy","class":"errors","nDetail":{"v":99,"e":5,"lines":[859,942,1335],"oor":0,"to":0},"wDetail":{"v":69,"e":4,"lines":[942,1335]}}
+{"file":"verification/proofDivision/isolateAllAssertions.dfy","class":"errors","nDetail":{"v":6,"e":1,"lines":[15],"oor":0,"to":0},"wDetail":{"v":1,"e":1,"lines":[15]}}
+{"file":"verification/proofDivision/isolateAssertionOrJump.dfy","class":"errors","nDetail":{"v":2,"e":5,"lines":[14,28,39,44,55],"oor":0,"to":0},"wDetail":{"v":0,"e":5,"lines":[14,28,39,44,55]}}
+{"file":"verification/proofDivision/isolatePaths.dfy","class":"errors","nDetail":{"v":4,"e":3,"lines":[21,27,38],"oor":0,"to":0},"wDetail":{"v":0,"e":3,"lines":[21,27,38]}}
+{"file":"vstte2012/BreadthFirstSearch.dfy","class":"clean","nDetail":{"v":148,"e":0,"lines":[],"oor":0,"to":0},"wDetail":{"v":14,"e":0,"lines":[]}}
+{"file":"vstte2012/Combinators.dfy","class":"errors","nDetail":{"v":25,"e":2,"lines":[253],"oor":0,"to":0},"wDetail":{"v":22,"e":3,"lines":[119,253]}}
+
+-- DISAGREEMENTS --
+{"file":"dafny0/Fuel.dfy","native":"errors","wasm":"reject","nDetail":{"v":31,"e":27,"oor":0,"to":0},"wDetail":{"v":0,"e":2,"stage":"translation"},"nFirst":"(17,22): Error: assertion might not hold","wFirst":"Fuel can only increase within a given scope."}
+{"file":"dafny1/ExtensibleArrayAuto.dfy","native":"clean","wasm":"errors","nDetail":{"v":9,"e":0,"oor":0,"to":0},"wDetail":{"v":8,"e":1,"stage":"verification"},"nFirst":null,"wFirst":"1 proof obligation(s) timed out"}
+{"file":"dafny1/SchorrWaite.dfy","native":"clean","wasm":"errors","nDetail":{"v":272,"e":0,"oor":0,"to":0},"wDetail":{"v":9,"e":1,"stage":"verification"},"nFirst":null,"wFirst":"Error: this invariant could not be proved to be maintained by the loop"}
+{"file":"dafny4/Primes.dfy","native":"errors","wasm":"clean","nDetail":{"v":14,"e":0,"oor":0,"to":1},"wDetail":{"v":15,"e":0,"stage":"verification"},"nFirst":"(107,6): Error: Verification of 'RemoveFactor' timed out after 30 seconds. (the limit can be increased using --verification-time-limit)","wFirst":null}
+{"file":"dafny4/UnionFind.dfy","native":"errors","wasm":"clean","nDetail":{"v":45,"e":0,"oor":0,"to":1},"wDetail":{"v":63,"e":0,"stage":"verification"},"nFirst":"(206,11): Error: Verification of 'M3.UnionFind.Join' timed out after 30 seconds. (the limit can be increased using --verification-time-limit)","wFirst":null}
+{"file":"dafny4/gcd.dfy","native":"errors","wasm":"clean","nDetail":{"v":96,"e":0,"oor":0,"to":1},"wDetail":{"v":23,"e":0,"stage":"verification"},"nFirst":"(165,13): Error: Verification of 'GcdSubtract' timed out after 30 seconds. (the limit can be increased using --verification-time-limit)","wFirst":null}
+
+-- infrastructure (timeout/hang/crash) --
+{"file":"dafny0/OnDemandResolutionCycle.dfy","native":"timeout","wasm":"crash","firstError":"Program terminated with exit(1)"}
+{"file":"dafny2/SmallestMissingNumber-functional.dfy","native":"timeout","wasm":"hang","firstError":null}
+{"file":"dafny2/SnapshotableTrees.dfy","native":"timeout","wasm":"hang","firstError":"(72,25): Error: a precondition for this call could not be proved"}
+{"file":"dafny2/pq-intrinsic-extrinsic.dfy","native":"errors","wasm":"hang","firstError":"(222,33): Error: Verification out of resource (PriorityQueue_extrinsic.AboutInsert)"}
+{"file":"dafny4/git-issue106.dfy","native":"errors","wasm":"done","firstError":"RuntimeError: memory access out of bounds"}
+{"file":"dafny4/git-issue110.dfy","native":"clean","wasm":"hang","firstError":null}
+{"file":"git-issues/git-issue-2134.dfy","native":"timeout","wasm":"crash","firstError":"Program terminated with exit(1)"}
+{"file":"git-issues/git-issue-267.dfy","native":"clean","wasm":"crash","firstError":"Program terminated with exit(1)"}
+{"file":"verification/outOfResourceAndIsolateAssertions.dfy","native":"errors","wasm":"done","firstError":"RuntimeError: memory access out of bounds"}
+{"file":"verification/progress.dfy","native":"clean","wasm":"hang","firstError":null}
+{"file":"vstte2012/Tree.dfy","native":"clean","wasm":"hang","firstError":null}
