@@ -175,16 +175,20 @@ export async function createDafny(options = {}) {
 
     /**
      * @param {string} source
-     * @param {{ timeLimitSeconds?: number }} verifyOptions per-obligation
-     *   limit like `dafny verify --verification-time-limit`. Omit or 0 for
-     *   the CLI default (30 s); -1 for no limit.
+     * @param {{ timeLimitSeconds?: number, counterexamples?: boolean }}
+     *   verifyOptions — timeLimitSeconds: per-obligation limit like
+     *   `dafny verify --verification-time-limit` (omit/0 for the CLI default
+     *   of 30 s, -1 for no limit); counterexamples: ask the solver for a
+     *   model on each failed assertion (like --extract-counterexample) and
+     *   attach it to the diagnostic as a list of execution states.
      */
     verify(source, verifyOptions = {}) {
       if (typeof source !== "string") {
         return Promise.reject(new TypeError("Dafny source must be a string."));
       }
       const timeLimitSeconds = verifyOptions.timeLimitSeconds ?? 0;
-      return call("verify", source, { timeLimitSeconds });
+      const counterexamples = verifyOptions.counterexamples === true;
+      return call("verify", source, { timeLimitSeconds, counterexamples });
     },
 
     getLastSmtTranscript() {

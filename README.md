@@ -86,6 +86,13 @@ import { createDafny } from "./dafny-browser.js";
 const dafny = await createDafny(); // or createDafny({ baseUrl: "/static/dafny/" })
 // Optional: createDafny({ onProgress: ({ stage, loadedBytes, totalBytes }) => ... })
 // reports download progress during the first-visit fetch of the runtime.
+//
+// verify(source, { timeLimitSeconds, counterexamples }) — per-obligation time
+// limit (like --verification-time-limit; 0 = CLI default 30 s, -1 = none) and
+// counterexample extraction (like --extract-counterexample): failing
+// diagnostics gain a `counterexample` list of execution states, each with a
+// source position and a Dafny assumption constraining the variables there —
+// the demo renders these as a trace with in-editor value annotations.
 
 const result = await dafny.verify(`
 method Abs(x: int) returns (y: int)

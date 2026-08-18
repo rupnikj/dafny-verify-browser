@@ -125,7 +125,7 @@ async function start() {
   const exports = await runtime.getAssemblyExports(config.mainAssemblyName);
 
   self.addEventListener("message", async event => {
-    const { id, operation, source, timeLimitSeconds } = event.data;
+    const { id, operation, source, timeLimitSeconds, counterexamples } = event.data;
     try {
       let json;
       switch (operation) {
@@ -133,9 +133,11 @@ async function start() {
           json = await exports.DafnyBrowser.BrowserApi.Parse(source);
           break;
         case "verify":
-          json = timeLimitSeconds
-            ? await exports.DafnyBrowser.BrowserApi.VerifyWithLimit(source, timeLimitSeconds)
-            : await exports.DafnyBrowser.BrowserApi.Verify(source);
+          json = counterexamples
+            ? await exports.DafnyBrowser.BrowserApi.VerifyFull(source, timeLimitSeconds || 0, true)
+            : timeLimitSeconds
+              ? await exports.DafnyBrowser.BrowserApi.VerifyWithLimit(source, timeLimitSeconds)
+              : await exports.DafnyBrowser.BrowserApi.Verify(source);
           break;
         case "transcript":
           json = exports.DafnyBrowser.BrowserApi.GetLastSmtTranscript();

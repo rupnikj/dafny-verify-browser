@@ -3,6 +3,7 @@ import {
   Decoration,
   EditorView,
   GutterMarker,
+  WidgetType,
   crosshairCursor,
   drawSelection,
   dropCursor,
@@ -264,6 +265,138 @@ const editorTheme = EditorView.theme({
 }, { dark: true });
 
 const setDiagnosticsEffect = StateEffect.define();
+
+// ---------- Counterexample presentation ----------
+
+// "assume 0 == x && 0 == y;" -> ["x == 0", "y == 0"]
+function counterexampleConstraints(assumption) {
+  let expr = assumption.trim()
+    .replace(/^assume\b\s*(\{:[^}]*\}\s*)?/, "")
+    .replace(/;$/, "")
+    .trim();
+  const parts = [];
+  let depth = 0, start = 0, inString = false;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (inString) {
+      if (ch === '"' && expr[i - 1] !== "\\") inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if ("([{".includes(ch)) depth++;
+    else if (")]}".includes(ch)) depth--;
+    else if (depth === 0 && expr.startsWith(" && ", i)) {
+      parts.push(expr.slice(start, i));
+      start = i + 4;
+      i += 3;
+    }
+  }
+  parts.push(expr.slice(start));
+  const isLiteral = text => /^(-?[\d][\w.]*|true|false|null|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')$/.test(text);
+  const seen = new Set();
+  const cleaned = [];
+  for (const part of parts) {
+    let text = part.trim();
+    // Dafny synthesises ghost guards to describe loop iterations; the
+    // assignments are bookkeeping, and implications just scope a fact to
+    // "after some loop iterations" — show the fact itself.
+    if (/^counterexampleLoopGuard\d+\s*:=/.test(text)) continue;
+    text = text.replace(/^counterexampleLoopGuard\d+\s*==>\s*/, "");
+    // Model output tends to say "0 == x"; people read "x == 0".
+    const eq = text.match(/^(.+?)\s*==\s*(.+)$/);
+    if (eq && isLiteral(eq[1]) && !isLiteral(eq[2])) {
+      text = eq[2] + " == " + eq[1];
+    }
+    if (text.length > 0 && !seen.has(text)) {
+      seen.add(text);
+      cleaned.push(text);
+    }
+  }
+  return cleaned;
+}
+
+const CEX_KEYWORDS = new Set(["true", "false", "null", "forall", "exists", "in", "old", "if", "then", "else"]);
+
+// Lightweight Dafny expression highlighter matching the editor palette.
+function highlightConstraint(text) {
+  const fragment = document.createDocumentFragment();
+  const tokens = text.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_][\w']*|-?\d[\w.]*|<==>|==>|<==|::|==|!=|<=|>=|&&|\|\||[-+*\/%<>=!&|^~?:.,()\[\]{}]|\s+/g) ?? [text];
+  for (const token of tokens) {
+    const span = document.createElement("span");
+    span.textContent = token;
+    if (/^["']/.test(token)) span.className = "cex-tok-string";
+    else if (/^-?\d/.test(token)) span.className = "cex-tok-number";
+    else if (CEX_KEYWORDS.has(token)) span.className = "cex-tok-keyword";
+    else if (/^[A-Za-z_]/.test(token)) span.className = "cex-tok-name";
+    else if (/^\s+$/.test(token)) span.className = "";
+    else span.className = "cex-tok-op";
+    fragment.append(span);
+  }
+  return fragment;
+}
+
+function counterexampleStateLabel(state) {
+  if (state.isInitial || /initial state/.test(state.name)) return "on entry";
+  return "line " + state.line;
+}
+
+// Editor ghost values: debugger-style inline annotations at each state line.
+class CounterexampleGhost extends WidgetType {
+  constructor(text) { super(); this.text = text; }
+  eq(other) { return other.text === this.text; }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-cex-ghost";
+    span.textContent = "  ⇐ " + this.text;
+    return span;
+  }
+  ignoreEvent() { return true; }
+}
+
+const setCounterexampleGhostsEffect = StateEffect.define();
+
+const counterexampleGhostField = StateField.define({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    if (transaction.docChanged) return Decoration.none;
+    for (const effect of transaction.effects) {
+      if (effect.is(setCounterexampleGhostsEffect)) {
+        const doc = transaction.state.doc;
+        const byLine = new Map();
+        for (const ghost of effect.value) {
+          if (Number.isInteger(ghost.line) && ghost.line >= 1 && ghost.line <= doc.lines) {
+            byLine.set(ghost.line, ghost.text);
+          }
+        }
+        return Decoration.set([...byLine.entries()].map(([line, text]) =>
+          Decoration.widget({ widget: new CounterexampleGhost(text), side: 1 })
+            .range(doc.line(line).to)), true);
+      }
+    }
+    return value;
+  },
+  provide: field => EditorView.decorations.from(field)
+});
+
+// The states of one counterexample, as ghost annotations showing what is NEW
+// at each step of the trace.
+function ghostsForCounterexample(states) {
+  const ghosts = [];
+  let previous = new Set();
+  for (const state of states) {
+    const constraints = counterexampleConstraints(state.assumption);
+    const fresh = constraints.filter(constraint => !previous.has(constraint));
+    previous = new Set(constraints);
+    if (fresh.length > 0) {
+      let text = fresh.join(", ");
+      if (text.length > 64) {
+        text = text.slice(0, 61) + "…";
+      }
+      ghosts.push({ line: state.line, text });
+    }
+  }
+  return ghosts;
+}
 
 const emptyDiagnosticState = {
   decorations: Decoration.none,
@@ -531,6 +664,7 @@ editor = new EditorView({
       syntaxHighlighting(dafnyHighlight),
       editorTheme,
       diagnosticField,
+      counterexampleGhostField,
       diagnosticHover,
       EditorState.tabSize.of(2),
       keymap.of([
@@ -616,6 +750,9 @@ function renderProblems() {
       button.addEventListener("click", () => jumpToDiagnostic(diagnostic));
     }
     item.append(button);
+    if (Array.isArray(diagnostic.counterexample) && diagnostic.counterexample.length > 0) {
+      item.append(renderCounterexample(diagnostic.counterexample));
+    }
     problemsList.append(item);
   }
 
@@ -640,6 +777,66 @@ problemFilters.addEventListener("click", event => {
   renderProblems();
 });
 
+function renderCounterexample(states) {
+  const container = document.createElement("div");
+  container.className = "cex";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "cex-toggle";
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.innerHTML = '<span class="cex-chevron">▾</span> counterexample' +
+    '<span class="cex-count">' + states.length + ' state' + (states.length === 1 ? "" : "s") + '</span>';
+
+  const block = document.createElement("div");
+  block.className = "cex-block";
+
+  let previous = new Set();
+  for (const state of states) {
+    const constraints = counterexampleConstraints(state.assumption);
+    const card = document.createElement("div");
+    card.className = "cex-state";
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "cex-state-header";
+    header.textContent = counterexampleStateLabel(state);
+    header.title = "Go to line " + state.line;
+    header.addEventListener("click", () => jumpToDiagnostic({ line: state.line, column: state.column + 1 }));
+    card.append(header);
+
+    const list = document.createElement("div");
+    list.className = "cex-constraints";
+    for (const constraint of constraints) {
+      const row = document.createElement("code");
+      row.className = "cex-constraint" + (previous.has(constraint) ? " is-carried" : "");
+      row.append(highlightConstraint(constraint));
+      list.append(row);
+    }
+    previous = new Set(constraints);
+    card.append(list);
+    block.append(card);
+  }
+
+  const note = document.createElement("a");
+  note.className = "cex-note";
+  note.href = "https://dafny.org/latest/DafnyRef/DafnyRef#sec-counterexamples";
+  note.target = "_blank";
+  note.rel = "noopener";
+  note.textContent = "heuristic — may be incomplete or inconsistent";
+  block.append(note);
+
+  toggle.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!expanded));
+    toggle.querySelector(".cex-chevron").textContent = expanded ? "▸" : "▾";
+    block.hidden = expanded;
+  });
+
+  container.append(toggle, block);
+  return container;
+}
+
 function setRunningState(isRunning) {
   running = isRunning;
   // While running, the button stays enabled and becomes Cancel.
@@ -654,7 +851,13 @@ function showVerificationResult(result) {
     .filter(diagnostic => diagnostic.severity === "error" || diagnostic.severity === "warning");
   currentDiagnostics = editorDiagnostics;
   suppressEmptyState = result.verified;
-  editor.dispatch({ effects: setDiagnosticsEffect.of(editorDiagnostics) });
+  const firstCounterexample = editorDiagnostics.find(diagnostic =>
+    Array.isArray(diagnostic.counterexample) && diagnostic.counterexample.length > 0);
+  editor.dispatch({ effects: [
+    setDiagnosticsEffect.of(editorDiagnostics),
+    setCounterexampleGhostsEffect.of(
+      firstCounterexample ? ghostsForCounterexample(firstCounterexample.counterexample) : [])
+  ] });
   renderProblems();
   output.textContent = JSON.stringify(result, null, 2);
   modifiedDot.classList.remove("is-visible");
@@ -717,7 +920,8 @@ async function runVerification() {
 
   try {
     const timeLimitSeconds = Number(document.querySelector("#time-limit").value) || 0;
-    showVerificationResult(await verify(editor.state.doc.toString(), { timeLimitSeconds }));
+    showVerificationResult(await verify(editor.state.doc.toString(),
+      { timeLimitSeconds, counterexamples: true }));
   } catch (error) {
     if (String(error?.message) === "cancelled") {
       resultSummary.className = "result-summary is-idle";

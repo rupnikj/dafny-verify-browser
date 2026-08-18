@@ -44,12 +44,27 @@ public static partial class BrowserApi {
     return VerifyCore(source, timeLimitSeconds);
   }
 
-  private static async Task<string> VerifyCore(string source, int timeLimitSeconds) {
+  // extractCounterexamples asks Z3 for a model on each failed assertion and
+  // renders it through Dafny's own counterexample machinery (DafnyModel).
+  // Opt-in because it changes the SMT exchange (get-model requests), which
+  // the fidelity suite deliberately runs without.
+  [JSExport]
+  public static Task<string> VerifyFull(string source, int timeLimitSeconds, bool extractCounterexamples) {
+    return VerifyCore(source, timeLimitSeconds, extractCounterexamples);
+  }
+
+  private static async Task<string> VerifyCore(string source, int timeLimitSeconds, bool extractCounterexamples = false) {
     await PipelineLock.WaitAsync();
     var transcript = new SmtTranscriptRecorder();
     try {
       var (options, reporter, printer) = CreatePipeline();
       options.CreateSolver = (_, _) => new BrowserSmtSolver(transcript);
+      if (extractCounterexamples) {
+        // What `dafny verify --extract-counterexample` sets: EnhancedErrorMessages
+        // makes Boogie request models (ExpectingModel) for failing assertions.
+        options.ExtractCounterexample = true;
+        options.EnhancedErrorMessages = 1;
+      }
       if (timeLimitSeconds > 0) {
         options.TimeLimit = (uint)timeLimitSeconds;
       } else if (timeLimitSeconds < 0) {
@@ -89,7 +104,7 @@ public static partial class BrowserApi {
         allVerified &= DafnyMain.IsBoogieVerified(outcome, statistics);
       }
 
-      diagnostics.AddRange(VerificationDiagnostics(printer));
+      diagnostics.AddRange(VerificationDiagnostics(printer, extractCounterexamples ? options : null));
       if (timeoutCount > 0) {
         diagnostics.Add(new BrowserDiagnostic("error", "verifier",
           $"{timeoutCount} proof obligation(s) timed out" +
@@ -214,7 +229,8 @@ public static partial class BrowserApi {
     return (parseResult.Program, reporter.HasErrors ? "resolution" : "resolved");
   }
 
-  private static IEnumerable<BrowserDiagnostic> VerificationDiagnostics(DafnyConsolePrinter printer) {
+  private static IEnumerable<BrowserDiagnostic> VerificationDiagnostics(
+    DafnyConsolePrinter printer, DafnyOptions? counterexampleOptions) {
     foreach (var logEntry in printer.VerificationResults) {
       foreach (var counterexample in logEntry.Result.Counterexamples) {
         var information = counterexample.CreateErrorInformation(logEntry.Result.Outcome, false);
@@ -225,8 +241,47 @@ public static partial class BrowserApi {
           "verifier",
           information.FullMsg,
           dafnyToken.line,
-          dafnyToken.col);
+          dafnyToken.col,
+          counterexampleOptions == null ? null : ExtractCounterexample(counterexample, counterexampleOptions));
       }
+    }
+  }
+
+  /// <summary>
+  /// Render a Boogie counterexample through Dafny's model interpretation
+  /// (the same path as `dafny verify --extract-counterexample`): a sequence
+  /// of execution states, each holding a Dafny assumption expression that
+  /// constrains the variables in scope at that point. Model interpretation
+  /// is heuristic and known-fragile upstream, so every step is fault-isolated.
+  /// </summary>
+  private static IReadOnlyList<CounterexampleState>? ExtractCounterexample(
+    Microsoft.Boogie.Counterexample counterexample, DafnyOptions options) {
+    if (counterexample.Model == null) {
+      return null;
+    }
+    try {
+      var model = new DafnyModel(counterexample.Model, options);
+      model.AssignConcretePrimitiveValues();
+      var states = new List<CounterexampleState>();
+      foreach (var state in model.States) {
+        if (!state.StateContainsPosition()) {
+          continue;
+        }
+        try {
+          var assumption = state.AsAssumption().ToString().Trim();
+          states.Add(new CounterexampleState(
+            state.FullStateName,
+            state.GetLineId(),
+            state.GetCharId(),
+            state.IsInitialState,
+            assumption));
+        } catch {
+          // Skip states the model interpreter cannot render.
+        }
+      }
+      return states.Count > 0 ? states : null;
+    } catch {
+      return null;
     }
   }
 
@@ -263,7 +318,17 @@ public sealed record BrowserDiagnostic(
   string Source,
   string Message,
   int? Line,
-  int? Column
+  int? Column,
+  [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+  IReadOnlyList<CounterexampleState>? Counterexample = null
+);
+
+public sealed record CounterexampleState(
+  string Name,
+  int Line,
+  int Column,
+  bool IsInitial,
+  string Assumption
 );
 
 public sealed record ParseResult(

@@ -53,6 +53,20 @@ const absTranscript = JSON.parse(exports.DafnyBrowser.BrowserApi.GetLastSmtTrans
 const badResult = JSON.parse(await exports.DafnyBrowser.BrowserApi.Verify(bad));
 const badTranscript = JSON.parse(exports.DafnyBrowser.BrowserApi.GetLastSmtTranscript());
 
+{
+  const cex = JSON.parse(await exports.DafnyBrowser.BrowserApi.VerifyFull(bad, 0, true));
+  const states = cex.diagnostics?.[0]?.counterexample;
+  if (!Array.isArray(states) || states.length === 0 ||
+      !states.some(state => /==/.test(state.assumption))) {
+    console.error("counterexample extraction failed:", JSON.stringify(cex.diagnostics));
+    process.exit(1);
+  }
+  const plain = JSON.parse(await exports.DafnyBrowser.BrowserApi.Verify(bad));
+  if (plain.diagnostics?.some(diagnostic => diagnostic.counterexample)) {
+    console.error("default Verify must not carry counterexamples");
+    process.exit(1);
+  }
+}
 console.log(JSON.stringify({ abs: absResult, bad: badResult }, null, 2));
 
 assert.equal(absResult.verified, true);

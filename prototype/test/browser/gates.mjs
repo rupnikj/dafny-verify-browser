@@ -81,6 +81,15 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   await page.selectOption("#example", "bad");
   await page.click("#verify");
   await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
+  await page.waitForSelector(".cex-constraint", { timeout: 30000 });
+  const constraints = await page.locator(".cex-constraint").allTextContents();
+  if (!constraints.some(text => /==/.test(text))) {
+    throw new Error("counterexample constraints missing: " + constraints.join(", "));
+  }
+  const ghosts = await page.locator(".cm-cex-ghost").count();
+  if (ghosts === 0) {
+    throw new Error("no in-editor counterexample ghosts rendered");
+  }
 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero

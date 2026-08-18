@@ -495,3 +495,110 @@ button { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ---------- Counterexamples ---------- */
+
+.cex {
+  margin: 2px 10px 8px 34px;
+}
+
+.cex-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: #9fb3c8;
+  background: #1a212c;
+  border: 1px solid #2c3644;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.cex-toggle:hover { color: #d8dee9; border-color: #3b4655; }
+
+.cex-chevron { font-size: 10px; color: #72bdff; }
+
+.cex-count {
+  color: #5e6978;
+  font-size: 10px;
+}
+
+.cex-block {
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+}
+
+.cex-state {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 7px 10px;
+  background: #12161c;
+  border: 1px solid #262e3a;
+  border-left: 2px solid #2c8ce8;
+  border-radius: 6px;
+}
+
+.cex-state-header {
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  padding: 1px 0;
+  color: #72bdff;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cex-state-header:hover { text-decoration: underline; }
+
+.cex-constraints {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cex-constraint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.cex-constraint.is-carried { opacity: .38; }
+
+.cex-tok-string { color: #d5bd79; }
+.cex-tok-number { color: #b7dc8b; }
+.cex-tok-keyword { color: #f0a96b; }
+.cex-tok-name { color: #7fc4ff; }
+.cex-tok-op { color: #8dc9ff; }
+
+.cex-note {
+  justify-self: start;
+  font-size: 10px;
+  color: #5e6978;
+  text-decoration: none;
+  border-bottom: 1px dotted #3b4655;
+}
+
+.cex-note:hover { color: #9fb3c8; }
+
+/* Debugger-style inline values in the editor */
+.cm-cex-ghost {
+  color: #6ea176;
+  font-style: italic;
+  opacity: .85;
+  pointer-events: none;
+  user-select: none;
+}
+
+.empty-state[hidden] { display: none; }
+
+#time-limit { max-width: 168px; }
