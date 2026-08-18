@@ -52,6 +52,20 @@ const examples = {
     "  y := x;",
     "}"
   ].join("\n"),
+  leap: [
+    "// The folk rule \"every fourth year is a leap year\" served Rome well —",
+    "// until 1582. Can the verifier find the year it breaks?",
+    "predicate IsLeapYear(year: int) {",
+    "  year % 400 == 0 || (year % 4 == 0 && year % 100 != 0)",
+    "}",
+    "",
+    "method CheckLeapYear(year: int) returns (leap: bool)",
+    "  requires 1583 <= year <= 9999",
+    "  ensures leap == IsLeapYear(year)",
+    "{",
+    "  leap := year % 4 == 0;",
+    "}"
+  ].join("\n"),
   max: [
     "method MaxArray(a: array<int>) returns (m: int)",
     "  requires a.Length > 0",
