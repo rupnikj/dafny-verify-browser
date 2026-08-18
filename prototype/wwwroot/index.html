@@ -64,13 +64,28 @@
           <label class="example-picker">
             <span class="sr-only">Load example</span>
             <select id="example">
-              <option value="abs">Abs (verifies)</option>
-              <option value="bad">Bad (fails)</option>
-              <option value="max">MaxArray (loop invariants)</option>
-              <option value="leap">LeapYear (find the bug)</option>
-              <option value="sum">SumArray (off by one)</option>
-              <option value="first">First (empty case)</option>
-              <option value="count">CountRange (fencepost)</option>
+              <optgroup label="Examples">
+                <option value="abs">Abs (verifies)</option>
+                <option value="bad">Bad (fails)</option>
+                <option value="max">MaxArray (loop invariants)</option>
+                <option value="leap">LeapYear (find the bug)</option>
+                <option value="sum">SumArray (off by one)</option>
+                <option value="first">First (empty case)</option>
+                <option value="count">CountRange (fencepost)</option>
+              </optgroup>
+              <optgroup label="rise4fun classics">
+                <option value="r4f_hello">Hello (is it correct?)</option>
+                <option value="r4f_fib">Fibonacci (termination)</option>
+                <option value="r4f_ack">Ackermann (verifies)</option>
+                <option value="r4f_add">Add (fix the invariant)</option>
+                <option value="r4f_mul">Mul (find the error)</option>
+                <option value="r4f_countton">CountToN (terminates?)</option>
+                <option value="r4f_countreturn">CountToAndReturnN (make it verify)</option>
+                <option value="r4f_cube">Cube (fix the program)</option>
+                <option value="r4f_zunebug">ZuneBug (infinite loop)</option>
+                <option value="r4f_zunefixed">ZuneBug (fixed)</option>
+                <option value="r4f_summax">VSTTE'10 SumMax (puzzle)</option>
+              </optgroup>
             </select>
           </label>
           <button class="verify-button" id="verify" type="button" disabled>

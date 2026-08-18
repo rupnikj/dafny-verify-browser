@@ -141,6 +141,15 @@ redistributed.
 The published site contains the Microsoft .NET 8 browser-wasm runtime
 (`_framework/`), MIT-licensed: <https://github.com/dotnet/runtime>.
 
+## rise4fun sample programs
+
+The demo's "rise4fun classics" examples are the historical Dafny sample
+programs from Microsoft Research's rise4fun.com (discontinued), recovered
+from the Internet Archive's Wayback Machine. They are teaching snippets by
+the Dafny authors, reproduced with attribution comments; one syntactic
+modernization (`function method` → `function`) is noted inline where
+applied.
+
 ## Brotli decoder (inline artifact only)
 
 The single-file artifact built by `tools/make-dafny-artifact.mjs` embeds the
