@@ -845,10 +845,21 @@ function renderTutorialChapter(index) {
       loadButton.textContent = "Open in editor";
       loadButton.addEventListener("click", () => loadIntoEditor(segment.code));
 
+      const resolveOnly = segment.directive === "%check-resolve";
       const expectErrors = segment.expected?.expectErrors === true;
       const hint = document.createElement("span");
       hint.className = "tutorial-hint";
-      hint.textContent = expectErrors ? "expected: does not verify" : "expected: verifies";
+      if (resolveOnly) {
+        hint.textContent = expectErrors
+          ? "deliberately broken — expected: resolution error"
+          : "incomplete example — checks resolution only";
+      } else {
+        hint.textContent = expectErrors ? "expected: does not verify" : "expected: verifies";
+        if (segment.expected?.note) {
+          hint.textContent += " (" + segment.expected.note.split(":")[0] + ")";
+          hint.title = segment.expected.note;
+        }
+      }
 
       const badge = document.createElement("span");
       badge.className = "tutorial-badge";
@@ -863,10 +874,23 @@ function renderTutorialChapter(index) {
             timeLimitSeconds: Number(document.querySelector("#time-limit").value) || 0
           });
           const failed = !result.verified;
-          const matches = failed === expectErrors;
-          badge.className = "tutorial-badge " + (matches ? "is-good" : "is-odd");
-          badge.textContent = (failed ? "✗ does not verify" : "✓ verifies") +
-            (matches ? "" : " — differs from tutorial expectation");
+          if (resolveOnly) {
+            // The tutorial's claim for this block is about resolution only —
+            // which may itself be expected to fail (deliberately broken
+            // module examples) or succeed (incomplete sketches).
+            const resolutionFailed = ["parse", "resolution"].includes(result.stage);
+            const matches = resolutionFailed === expectErrors;
+            badge.className = "tutorial-badge " + (matches ? "is-good" : "is-odd");
+            badge.textContent = (resolutionFailed
+              ? "✗ resolution error" + (matches ? " (as the tutorial intends)" : "")
+              : "✓ resolves" + (failed ? " (verification incomplete, as the text explains)" : "")) +
+              (matches ? "" : " — differs from tutorial expectation");
+          } else {
+            const matches = failed === expectErrors;
+            badge.className = "tutorial-badge " + (matches ? "is-good" : "is-odd");
+            badge.textContent = (failed ? "✗ does not verify" : "✓ verifies") +
+              (matches ? "" : " — differs from tutorial expectation");
+          }
         } catch (error) {
           badge.className = "tutorial-badge is-odd";
           badge.textContent = String(error?.message ?? error) === "cancelled"
