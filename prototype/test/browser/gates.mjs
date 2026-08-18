@@ -92,7 +92,7 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   }
   // Tutorial tab: chapters load and the first runnable block produces a
   // verdict matching the upstream tutorial's expectation.
-  await page.click("#tutorial-tab");
+  await page.click("#tutorial-toggle");
   await page.waitForSelector(".tutorial-run", { timeout: 30000 });
   const chapters = await page.locator("#tutorial-chapter option").count();
   if (chapters !== 7) {
@@ -106,6 +106,16 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   const verdict = await page.locator(".tutorial-badge").first().textContent();
   if (verdict.includes("differs") || verdict.includes("error")) {
     throw new Error("tutorial first block verdict unexpected: " + verdict);
+  }
+  // With tutorial mode on, verifying from the editor must still show the
+  // problems panel alongside (the regression this layout replaced).
+  await page.selectOption("#example", "bad");
+  await page.click("#verify");
+  await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
+  const problemsVisible = await page.locator("#problems-view:not([hidden])").count();
+  const tutorialVisible = await page.locator("#tutorial-pane:not([hidden])").count();
+  if (problemsVisible !== 1 || tutorialVisible !== 1) {
+    throw new Error("tutorial mode layout broken: problems=" + problemsVisible + " tutorial=" + tutorialVisible);
   }
 });
 

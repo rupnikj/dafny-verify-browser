@@ -755,8 +755,7 @@ updateCursor(editor);
 
 const panels = {
   problems: [problemsTab, problemsView],
-  output: [outputTab, outputView],
-  tutorial: [document.querySelector("#tutorial-tab"), document.querySelector("#tutorial-view")]
+  output: [outputTab, outputView]
 };
 
 function setPanel(panel) {
@@ -766,14 +765,24 @@ function setPanel(panel) {
     tab.setAttribute("aria-selected", String(active));
     view.hidden = !active;
   }
-  if (panel === "tutorial") {
-    ensureTutorialLoaded();
-  }
 }
 
 problemsTab.addEventListener("click", () => setPanel("problems"));
 outputTab.addEventListener("click", () => setPanel("output"));
-document.querySelector("#tutorial-tab").addEventListener("click", () => setPanel("tutorial"));
+
+const tutorialToggle = document.querySelector("#tutorial-toggle");
+const tutorialPane = document.querySelector("#tutorial-pane");
+
+tutorialToggle.addEventListener("click", () => {
+  const on = !document.body.classList.contains("tutorial-on");
+  document.body.classList.toggle("tutorial-on", on);
+  tutorialPane.hidden = !on;
+  tutorialToggle.setAttribute("aria-pressed", String(on));
+  tutorialToggle.classList.toggle("is-active", on);
+  if (on) {
+    ensureTutorialLoaded();
+  }
+});
 
 // ---------- Tutorial (the revitalized rise4fun Dafny tutorial) ----------
 

@@ -19,6 +19,10 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute must always win, including over display:grid/flex
+   rules on the same element (bit us twice: .empty-state, .tutorial-view). */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
@@ -119,9 +123,6 @@ button { color: inherit; }
   overflow: hidden;
 }
 
-.load-progress[hidden] {
-  display: none;
-}
 
 .load-progress-fill {
   width: 0%;
@@ -220,6 +221,24 @@ button { color: inherit; }
   font-size: 12px;
 }
 
+.tutorial-toggle {
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tutorial-toggle:hover { color: var(--text); }
+.tutorial-toggle.is-active {
+  color: #a8d3ff;
+  border-color: #2c8ce8;
+  background: rgba(44, 140, 232, .12);
+}
+
 .verify-button {
   display: inline-flex;
   align-items: center;
@@ -252,7 +271,33 @@ button { color: inherit; }
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 34vw);
+  grid-template-areas: "editor panel";
   min-height: 0;
+}
+
+.editor-pane { grid-area: editor; }
+.panel { grid-area: panel; }
+
+body.tutorial-on .workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 40vw);
+  grid-template-rows: minmax(0, 1fr) minmax(150px, 34%);
+  grid-template-areas:
+    "editor tutorial"
+    "panel  tutorial";
+}
+
+body.tutorial-on .panel {
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.tutorial-pane {
+  grid-area: tutorial;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-1);
 }
 
 .editor-pane {
@@ -600,17 +645,11 @@ button { color: inherit; }
   user-select: none;
 }
 
-.empty-state[hidden] { display: none; }
 
 #time-limit { max-width: 168px; }
 
 /* ---------- Tutorial ---------- */
 
-.tutorial-view {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-}
 
 .tutorial-header {
   padding: 8px 12px;

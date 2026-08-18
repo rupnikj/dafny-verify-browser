@@ -88,6 +88,7 @@
               </optgroup>
             </select>
           </label>
+          <button class="tutorial-toggle" id="tutorial-toggle" type="button" aria-pressed="false" title="The classic Dafny tutorial, runnable in this page">Tutorial</button>
           <button class="verify-button" id="verify" type="button" disabled>
             <span class="play-icon" aria-hidden="true">▶</span>
             <span id="verify-label">Verify</span>
@@ -107,7 +108,6 @@
               Problems <span class="badge" id="problem-count">0</span>
             </button>
             <button class="panel-tab" id="output-tab" type="button" role="tab" aria-selected="false">Output</button>
-            <button class="panel-tab" id="tutorial-tab" type="button" role="tab" aria-selected="false">Tutorial</button>
           </div>
 
           <section class="result-summary is-idle" id="result-summary" aria-live="polite">
@@ -135,13 +135,14 @@
             <pre id="output">Verifier is starting…</pre>
           </div>
 
-          <div class="panel-view tutorial-view" id="tutorial-view" role="tabpanel" aria-labelledby="tutorial-tab" hidden>
-            <div class="tutorial-header">
-              <label class="sr-only" for="tutorial-chapter">Chapter</label>
-              <select id="tutorial-chapter"></select>
-            </div>
-            <div class="tutorial-content" id="tutorial-content">Loading tutorial…</div>
+        </aside>
+
+        <aside class="tutorial-pane" id="tutorial-pane" aria-label="Dafny tutorial" hidden>
+          <div class="tutorial-header">
+            <label class="sr-only" for="tutorial-chapter">Chapter</label>
+            <select id="tutorial-chapter"></select>
           </div>
+          <div class="tutorial-content" id="tutorial-content">Loading tutorial…</div>
         </aside>
       </section>
 
