@@ -141,6 +141,14 @@ redistributed.
 The published site contains the Microsoft .NET 8 browser-wasm runtime
 (`_framework/`), MIT-licensed: <https://github.com/dotnet/runtime>.
 
+## Dafny OnlineTutorial
+
+The demo's Tutorial tab renders the Dafny OnlineTutorial
+(`docs/OnlineTutorial` in <https://github.com/dafny-lang/dafny>, MIT — the
+maintained successor of the tutorial formerly hosted on rise4fun.com),
+baked at build time from the pinned checkout with per-example expected
+outcomes from the accompanying `.expect` files.
+
 ## rise4fun sample programs
 
 The demo's "rise4fun classics" examples are the historical Dafny sample

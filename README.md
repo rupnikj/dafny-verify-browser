@@ -8,7 +8,10 @@ frontend and Boogie 3.5.5 compiled to .NET WebAssembly, driving the official
 Z3 WebAssembly build. No verifier service, no native Z3, and the source you
 type never leaves the page.
 
-**Live demo:** <https://rupnikj.github.io/dafny-verify-browser/>
+**Live demo:** <https://rupnikj.github.io/dafny-verify-browser/> — includes
+an interactive **Tutorial** tab: the classic Dafny guide (formerly on
+rise4fun) with 150+ runnable examples verified in-browser, plus
+counterexample traces on failing programs.
 
 The first load downloads the whole verifier (~95 MB raw — a .NET runtime, 223
 managed assemblies, and a 33 MB Z3), so give it a moment; subsequent visits

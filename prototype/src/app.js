@@ -387,11 +387,12 @@ const CEX_KEYWORDS = new Set(["true", "false", "null", "forall", "exists", "in",
 // Lightweight Dafny expression highlighter matching the editor palette.
 function highlightConstraint(text) {
   const fragment = document.createDocumentFragment();
-  const tokens = text.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_][\w']*|-?\d[\w.]*|<==>|==>|<==|::|==|!=|<=|>=|&&|\|\||[-+*\/%<>=!&|^~?:.,()\[\]{}]|\s+/g) ?? [text];
+  const tokens = text.match(/\/\/[^\n]*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_][\w']*|-?\d[\w.]*|<==>|==>|<==|::|==|!=|<=|>=|&&|\|\||[-+*\/%<>=!&|^~?:.,()\[\]{}]|\s+/g) ?? [text];
   for (const token of tokens) {
     const span = document.createElement("span");
     span.textContent = token;
-    if (/^["']/.test(token)) span.className = "cex-tok-string";
+    if (token.startsWith("//")) span.className = "cex-tok-comment";
+    else if (/^["']/.test(token)) span.className = "cex-tok-string";
     else if (/^-?\d/.test(token)) span.className = "cex-tok-number";
     else if (CEX_KEYWORDS.has(token)) span.className = "cex-tok-keyword";
     else if (/^[A-Za-z_]/.test(token)) span.className = "cex-tok-name";
@@ -752,18 +753,141 @@ editor = new EditorView({
 });
 updateCursor(editor);
 
+const panels = {
+  problems: [problemsTab, problemsView],
+  output: [outputTab, outputView],
+  tutorial: [document.querySelector("#tutorial-tab"), document.querySelector("#tutorial-view")]
+};
+
 function setPanel(panel) {
-  const showProblems = panel === "problems";
-  problemsTab.classList.toggle("is-active", showProblems);
-  problemsTab.setAttribute("aria-selected", String(showProblems));
-  outputTab.classList.toggle("is-active", !showProblems);
-  outputTab.setAttribute("aria-selected", String(!showProblems));
-  problemsView.hidden = !showProblems;
-  outputView.hidden = showProblems;
+  for (const [name, [tab, view]] of Object.entries(panels)) {
+    const active = name === panel;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+    view.hidden = !active;
+  }
+  if (panel === "tutorial") {
+    ensureTutorialLoaded();
+  }
 }
 
 problemsTab.addEventListener("click", () => setPanel("problems"));
 outputTab.addEventListener("click", () => setPanel("output"));
+document.querySelector("#tutorial-tab").addEventListener("click", () => setPanel("tutorial"));
+
+// ---------- Tutorial (the revitalized rise4fun Dafny tutorial) ----------
+
+let tutorialData = null;
+let tutorialLoading = false;
+
+async function ensureTutorialLoaded() {
+  if (tutorialData || tutorialLoading) return;
+  tutorialLoading = true;
+  try {
+    tutorialData = await (await fetch("./tutorial.json")).json();
+    const chapterSelect = document.querySelector("#tutorial-chapter");
+    chapterSelect.replaceChildren(...tutorialData.chapters.map((chapter, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = (index + 1) + ". " + chapter.title;
+      return option;
+    }));
+    chapterSelect.addEventListener("change", () => renderTutorialChapter(Number(chapterSelect.value)));
+    renderTutorialChapter(0);
+  } catch (error) {
+    document.querySelector("#tutorial-content").textContent =
+      "Could not load the tutorial: " + (error?.message ?? error);
+  } finally {
+    tutorialLoading = false;
+  }
+}
+
+function loadIntoEditor(code) {
+  editor.dispatch({
+    changes: { from: 0, to: editor.state.doc.length, insert: code },
+    selection: { anchor: 0 },
+    effects: EditorView.scrollIntoView(0, { y: "start" })
+  });
+}
+
+function renderTutorialChapter(index) {
+  const chapter = tutorialData.chapters[index];
+  const container = document.querySelector("#tutorial-content");
+  container.replaceChildren();
+
+  for (const segment of chapter.segments) {
+    if (segment.kind === "prose") {
+      const prose = document.createElement("div");
+      prose.className = "tutorial-prose";
+      prose.innerHTML = segment.html;
+      container.append(prose);
+      continue;
+    }
+
+    const block = document.createElement("div");
+    block.className = "tutorial-code";
+    const pre = document.createElement("pre");
+    pre.append(highlightConstraint(segment.code));
+    block.append(pre);
+
+    if (segment.runnable) {
+      const bar = document.createElement("div");
+      bar.className = "tutorial-code-bar";
+
+      const runButton = document.createElement("button");
+      runButton.type = "button";
+      runButton.className = "tutorial-run";
+      runButton.textContent = "▶ Verify";
+
+      const loadButton = document.createElement("button");
+      loadButton.type = "button";
+      loadButton.className = "tutorial-load";
+      loadButton.textContent = "Open in editor";
+      loadButton.addEventListener("click", () => loadIntoEditor(segment.code));
+
+      const expectErrors = segment.expected?.expectErrors === true;
+      const hint = document.createElement("span");
+      hint.className = "tutorial-hint";
+      hint.textContent = expectErrors ? "expected: does not verify" : "expected: verifies";
+
+      const badge = document.createElement("span");
+      badge.className = "tutorial-badge";
+
+      runButton.addEventListener("click", async () => {
+        runButton.disabled = true;
+        badge.className = "tutorial-badge is-running";
+        badge.textContent = "verifying…";
+        try {
+          const dafny = await verifierReady;
+          const result = await dafny.verify(segment.code, {
+            timeLimitSeconds: Number(document.querySelector("#time-limit").value) || 0
+          });
+          const failed = !result.verified;
+          const matches = failed === expectErrors;
+          badge.className = "tutorial-badge " + (matches ? "is-good" : "is-odd");
+          badge.textContent = (failed ? "✗ does not verify" : "✓ verifies") +
+            (matches ? "" : " — differs from tutorial expectation");
+        } catch (error) {
+          badge.className = "tutorial-badge is-odd";
+          badge.textContent = String(error?.message ?? error) === "cancelled"
+            ? "cancelled" : "verifier error";
+        } finally {
+          runButton.disabled = false;
+        }
+      });
+
+      bar.append(runButton, loadButton, hint, badge);
+      block.append(bar);
+    }
+    container.append(block);
+  }
+
+  const attribution = document.createElement("p");
+  attribution.className = "tutorial-attribution";
+  attribution.innerHTML = 'From the <a href="https://github.com/dafny-lang/dafny/tree/master/docs/OnlineTutorial" target="_blank" rel="noopener">Dafny OnlineTutorial</a> (MIT) — the guide formerly hosted on rise4fun.';
+  container.append(attribution);
+  container.scrollTop = 0;
+}
 
 function jumpToDiagnostic(diagnostic) {
   if (!Number.isInteger(diagnostic.line) ||

@@ -90,6 +90,23 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (ghosts === 0) {
     throw new Error("no in-editor counterexample ghosts rendered");
   }
+  // Tutorial tab: chapters load and the first runnable block produces a
+  // verdict matching the upstream tutorial's expectation.
+  await page.click("#tutorial-tab");
+  await page.waitForSelector(".tutorial-run", { timeout: 30000 });
+  const chapters = await page.locator("#tutorial-chapter option").count();
+  if (chapters !== 7) {
+    throw new Error("expected 7 tutorial chapters, got " + chapters);
+  }
+  await page.locator(".tutorial-run").first().click();
+  await page.waitForFunction(() => {
+    const badge = document.querySelector(".tutorial-badge");
+    return badge && badge.textContent.length > 0 && !badge.textContent.includes("verifying");
+  }, undefined, { timeout: 120000 });
+  const verdict = await page.locator(".tutorial-badge").first().textContent();
+  if (verdict.includes("differs") || verdict.includes("error")) {
+    throw new Error("tutorial first block verdict unexpected: " + verdict);
+  }
 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero
