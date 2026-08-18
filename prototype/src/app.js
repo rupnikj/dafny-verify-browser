@@ -66,6 +66,46 @@ const examples = {
     "  leap := year % 4 == 0;",
     "}"
   ].join("\n"),
+  sum: [
+    "// Sum the array. Looks right, compiles in most languages,",
+    "// crashes on the last iteration. Watch i in the counterexample.",
+    "method Sum(a: array<int>) returns (total: int)",
+    "{",
+    "  total := 0;",
+    "  var i := 0;",
+    "  while i <= a.Length",
+    "    invariant 0 <= i <= a.Length + 1",
+    "  {",
+    "    total := total + a[i];",
+    "    i := i + 1;",
+    "  }",
+    "}"
+  ].join("\n"),
+  first: [
+    "// Works on every list you tested. The verifier tests one more.",
+    "method First(s: seq<int>) returns (x: int)",
+    "{",
+    "  x := s[0];",
+    "}"
+  ].join("\n"),
+  count: [
+    "// Count the integers from lo to hi, inclusive. The spec says",
+    "// inclusive; does the loop agree?",
+    "method CountRange(lo: int, hi: int) returns (n: int)",
+    "  requires lo <= hi",
+    "  ensures n == hi - lo + 1",
+    "{",
+    "  n := 0;",
+    "  var i := lo;",
+    "  while i < hi",
+    "    invariant lo <= i <= hi",
+    "    invariant n == i - lo",
+    "  {",
+    "    n := n + 1;",
+    "    i := i + 1;",
+    "  }",
+    "}"
+  ].join("\n"),
   max: [
     "method MaxArray(a: array<int>) returns (m: int)",
     "  requires a.Length > 0",
@@ -306,7 +346,7 @@ function counterexampleConstraints(assumption) {
     }
   }
   parts.push(expr.slice(start));
-  const isLiteral = text => /^(-?[\d][\w.]*|true|false|null|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')$/.test(text);
+  const isLiteral = text => /^(-?[\d][\w.]*|true|false|null|\[\]|\{\}|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')$/.test(text);
   const seen = new Set();
   const cleaned = [];
   for (const part of parts) {
@@ -315,6 +355,8 @@ function counterexampleConstraints(assumption) {
     // assignments are bookkeeping, and implications just scope a fact to
     // "after some loop iterations" — show the fact itself.
     if (/^counterexampleLoopGuard\d+\s*:=/.test(text)) continue;
+    // Reference types are non-null by construction; the model restates it.
+    if (/^[A-Za-z_][\w'.]*\s*!=\s*null$/.test(text)) continue;
     text = text.replace(/^counterexampleLoopGuard\d+\s*==>\s*/, "");
     // Model output tends to say "0 == x"; people read "x == 0".
     const eq = text.match(/^(.+?)\s*==\s*(.+)$/);
