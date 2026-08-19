@@ -28,3 +28,6 @@ prototype/test/differential/*.jsonl
 prototype/test/differential/*.log
 prototype/test/differential/candidates.json
 prototype/test/differential/comparison-report.txt
+
+# Local scratch (UX mocks, experiments) — never committed
+tmp/
