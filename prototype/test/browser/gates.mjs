@@ -110,6 +110,29 @@ async function gate(name, run, { retries = 0 } = {}) {
   }
 }
 
+
+// New grouped-toolbar interactions: examples and the tutorial live in one
+// menu, share/embed in another, live/limit in settings; the expert views sit
+// behind the "internals" reveal (persisted per browser context, so a later
+// page in the same context may already have the tab open).
+async function pickExample(page, key) {
+  await page.click("#examples-menu-button");
+  await page.click(`#examples-menu [data-example="${key}"]`);
+}
+async function toggleTutorial(page) {
+  await page.click("#examples-menu-button");
+  await page.click("#tutorial-toggle");
+}
+async function openInternals(page, view) {
+  const reveal = page.locator("#internals-reveal");
+  if (await reveal.isVisible()) {
+    await reveal.click();
+  } else {
+    await page.click("#hood-tab");
+  }
+  await page.click("#" + view + "-tab");
+}
+
 // Threaded tier: the real demo page through the worker, verifying and failing.
 await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   await page.goto(base + "/index.html", { waitUntil: "domcontentloaded" });
@@ -118,7 +141,7 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
     undefined, { timeout: BOOT_TIMEOUT });
   await page.click("#verify");
   await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
-  await page.selectOption("#example", "bad");
+  await pickExample(page, "bad");
   await page.click("#verify");
   await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
   await page.waitForSelector(".cex-constraint", { timeout: 30000 });
@@ -132,7 +155,7 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   }
   // Tutorial tab: chapters load and the first runnable block produces a
   // verdict matching the upstream tutorial's expectation.
-  await page.click("#tutorial-toggle");
+  await toggleTutorial(page);
   await page.waitForSelector(".tutorial-run", { timeout: 30000 });
   const chapters = await page.locator("#tutorial-chapter option").count();
   if (chapters !== 7) {
@@ -149,7 +172,7 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   }
   // With tutorial mode on, verifying from the editor must still show the
   // problems panel alongside (the regression this layout replaced).
-  await page.selectOption("#example", "bad");
+  await pickExample(page, "bad");
   await page.click("#verify");
   await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
   const problemsVisible = await page.locator("#problems-view:not([hidden])").count();
@@ -157,9 +180,9 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (problemsVisible !== 1 || tutorialVisible !== 1) {
     throw new Error("tutorial mode layout broken: problems=" + problemsVisible + " tutorial=" + tutorialVisible);
   }
-  await page.click("#tutorial-toggle");
+  await toggleTutorial(page);
   // Run: verify → compile to JS → execute Main in a throwaway worker.
-  await page.selectOption("#example", "fastfib");
+  await pickExample(page, "fastfib");
   await page.click("#run");
   await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
   const runText = await page.locator("#run-output").textContent();
@@ -176,7 +199,7 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (!jsState.hasMain || !jsState.runtimeStripped) {
     throw new Error("JS tab wrong: " + JSON.stringify(jsState));
   }
-  await page.click("#js-tab");
+  await openInternals(page, "js");
   await page.waitForSelector("#js-view .cm-editor", { timeout: 10000 });
   // "Copy runnable script" must produce text that actually runs when pasted
   // into a console: eval it in the page and capture console.log output.
@@ -199,13 +222,14 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
     throw new Error("runnable script console output wrong: " + consoleRun.slice(0, 5).join(" | "));
   }
   // SMT tab: the transcript of the last verification, rendered as SMT-LIB.
-  await page.click("#smt-tab");
+  await openInternals(page, "smt");
   await page.waitForSelector("#smt-view .cm-editor", { timeout: 30000 });
   const smtText = await page.evaluate(() => window.__smtText ?? "");
   if (!smtText.includes("(check-sat)") || !smtText.includes("proof obligation")) {
     throw new Error("SMT transcript missing expected content (len " + smtText.length + ")");
   }
   // Share: the permalink reopens the exact program in a fresh page load.
+  await page.click("#share-menu-button");
   await page.click("#share");
   await page.waitForFunction(() => typeof window.__shareUrl === "string", undefined, { timeout: 10000 });
   const shareUrl = await page.evaluate(() => window.__shareUrl);
@@ -221,6 +245,7 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
     throw new Error("shared program not restored from the URL fragment");
   }
   // Live mode: an edit re-verifies automatically — no Verify click.
+  await page.click("#settings-menu-button");
   await page.click("#live-toggle");
   await page.click("#editor .cm-content");
   await page.keyboard.press("ControlOrMeta+End");
@@ -324,15 +349,15 @@ if (withSingleFile) {
     await page.waitForFunction(
       () => document.querySelector("#runtime-label")?.textContent === "Verifier ready",
       undefined, { timeout: BOOT_TIMEOUT });
-    await page.selectOption("#example", "bad");
+    await pickExample(page, "bad");
     await page.click("#verify");
     await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
     await page.waitForSelector(".cex-constraint", { timeout: 30000 });
-    await page.click("#tutorial-toggle");
+    await toggleTutorial(page);
     await page.waitForSelector(".tutorial-code", { timeout: 30000 });
-    await page.click("#tutorial-toggle");
+    await toggleTutorial(page);
     // Run works from the inline payloads too (bignumber-src is embedded).
-    await page.selectOption("#example", "fastfib");
+    await pickExample(page, "fastfib");
     await page.click("#run");
     await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
     const runText = await page.locator("#run-output").textContent();

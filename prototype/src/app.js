@@ -667,7 +667,6 @@ const loadProgressFill = document.querySelector("#load-progress-fill");
 const editorHost = document.querySelector("#editor");
 const verifyButton = document.querySelector("#verify");
 const verifyLabel = document.querySelector("#verify-label");
-const exampleSelect = document.querySelector("#example");
 const modifiedDot = document.querySelector("#modified-dot");
 const problemsTab = document.querySelector("#problems-tab");
 const outputTab = document.querySelector("#output-tab");
@@ -705,6 +704,16 @@ let editor;
 
 document.querySelector("#verify-kbd").textContent =
   /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘↵" : "Ctrl+↵";
+
+const RESULT_SVG = {
+  check: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  cross: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  idle: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.9" y="4.9" width="6.2" height="6.2" rx="1" transform="rotate(45 8 8)" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  busy: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg>'
+};
+function setResultIcon(kind) {
+  resultIcon.innerHTML = RESULT_SVG[kind];
+}
 
 let dafnyInstance = null;
 
@@ -754,7 +763,7 @@ function clearResultForEdit() {
   renderProblems();
   modifiedDot.classList.add("is-visible");
   resultSummary.className = "result-summary is-idle";
-  resultIcon.textContent = "◇";
+  setResultIcon("idle");
   resultTitle.textContent = "Source modified";
   resultDetail.textContent = "Verify to refresh diagnostics.";
   verificationStage.textContent = "Modified";
@@ -812,20 +821,125 @@ const panels = {
   smt: [smtTab, smtView]
 };
 
+// The expert views (compiled JS, SMT transcript, raw result) live behind one
+// "Under the hood" tab that first-time visitors don't see: a muted
+// "internals" affordance reveals it, "hide" tucks it away, and the choice
+// persists per browser. Students meet Problems + Run and nothing else.
+const hoodTab = document.querySelector("#hood-tab");
+const hoodBar = document.querySelector("#hood-bar");
+const internalsReveal = document.querySelector("#internals-reveal");
+const internalsHide = document.querySelector("#internals-hide");
+const HOOD_VIEWS = ["js", "smt", "output"];
+const INTERNALS_KEY = "dafny-verify-internals";
+let lastHoodView = "js";
+
 function setPanel(panel) {
+  const inHood = HOOD_VIEWS.includes(panel);
+  if (inHood) {
+    lastHoodView = panel;
+    if (hoodTab.hidden) {
+      setInternalsOpen(true);
+    }
+  }
   for (const [name, [tab, view]] of Object.entries(panels)) {
     const active = name === panel;
     tab.classList.toggle("is-active", active);
     tab.setAttribute("aria-selected", String(active));
     view.hidden = !active;
   }
+  hoodTab.classList.toggle("is-active", inHood);
+  hoodTab.setAttribute("aria-selected", String(inHood));
+  hoodBar.hidden = !inHood;
+}
+
+function setInternalsOpen(open) {
+  hoodTab.hidden = !open;
+  internalsReveal.hidden = open;
+  try {
+    if (open) {
+      localStorage.setItem(INTERNALS_KEY, "1");
+    } else {
+      localStorage.removeItem(INTERNALS_KEY);
+    }
+  } catch {
+    // Private browsing / storage-blocked contexts: the session still works,
+    // the preference just doesn't persist.
+  }
+}
+
+try {
+  setInternalsOpen(localStorage.getItem(INTERNALS_KEY) === "1");
+} catch {
+  setInternalsOpen(false);
 }
 
 problemsTab.addEventListener("click", () => setPanel("problems"));
-outputTab.addEventListener("click", () => setPanel("output"));
 runTab.addEventListener("click", () => setPanel("run"));
+hoodTab.addEventListener("click", () => {
+  setPanel(lastHoodView);
+  if (lastHoodView === "smt") renderSmtTranscript();
+});
+internalsReveal.addEventListener("click", () => {
+  setInternalsOpen(true);
+  setPanel(lastHoodView);
+});
+internalsHide.addEventListener("click", () => {
+  setInternalsOpen(false);
+  setPanel("problems");
+});
 jsTab.addEventListener("click", () => setPanel("js"));
+outputTab.addEventListener("click", () => setPanel("output"));
 smtTab.addEventListener("click", () => { setPanel("smt"); renderSmtTranscript(); });
+
+// ---------- Toolbar dropdown menus ----------
+
+const MENUS = [
+  ["#examples-menu-button", "#examples-menu"],
+  ["#share-menu-button", "#share-menu"],
+  ["#settings-menu-button", "#settings-menu"]
+];
+function closeAllMenus() {
+  for (const [buttonSel, menuSel] of MENUS) {
+    document.querySelector(menuSel).hidden = true;
+    document.querySelector(buttonSel).setAttribute("aria-expanded", "false");
+  }
+}
+for (const [buttonSel, menuSel] of MENUS) {
+  const button = document.querySelector(buttonSel);
+  const menu = document.querySelector(menuSel);
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    const willOpen = menu.hidden;
+    closeAllMenus();
+    menu.hidden = !willOpen;
+    button.setAttribute("aria-expanded", String(willOpen));
+  });
+  menu.addEventListener("click", event => {
+    event.stopPropagation();
+    const item = event.target.closest(".menu-item");
+    // Items close the menu after their own handler ran; rows marked
+    // keep-open (toggles, copy feedback) leave it up.
+    if (item && !item.classList.contains("keep-open")) {
+      setTimeout(closeAllMenus, 0);
+    }
+  });
+}
+document.addEventListener("click", closeAllMenus);
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") closeAllMenus();
+});
+
+document.querySelector("#examples-menu").addEventListener("click", event => {
+  const item = event.target.closest("[data-example]");
+  if (!item) return;
+  const source = examples[item.dataset.example] ?? examples.abs;
+  editor.dispatch({
+    changes: { from: 0, to: editor.state.doc.length, insert: source },
+    selection: { anchor: 0 },
+    effects: EditorView.scrollIntoView(0, { y: "start" })
+  });
+  editor.focus();
+});
 
 // ---------- SMT transcript tab ----------
 // The actual SMT-LIB conversation between Boogie and Z3 for the last
@@ -1224,13 +1338,13 @@ function showVerificationResult(result) {
 
   if (result.verified) {
     resultSummary.className = "result-summary is-success";
-    resultIcon.textContent = "✓";
+    setResultIcon("check");
     resultTitle.textContent = "Verification succeeded";
     resultDetail.textContent = result.verifiedCount + " verified • " +
       result.smtExchangeCount + " SMT exchanges";
   } else {
     resultSummary.className = "result-summary is-error";
-    resultIcon.textContent = "×";
+    setResultIcon("cross");
     resultTitle.textContent = result.errorCount + (result.errorCount === 1 ? " problem" : " problems");
     resultDetail.textContent = result.verifiedCount + " verified • stage: " + result.stage;
   }
@@ -1250,7 +1364,7 @@ function showRuntimeError(error) {
   renderProblems();
   output.textContent = message;
   resultSummary.className = "result-summary is-error";
-  resultIcon.textContent = "×";
+  setResultIcon("cross");
   resultTitle.textContent = "Verifier error";
   resultDetail.textContent = "See Output for details.";
   verificationStage.textContent = "Runtime error";
@@ -1276,7 +1390,7 @@ async function runVerification(options = {}) {
   editor.dispatch({ effects: setDiagnosticsEffect.of([]) });
   renderProblems();
   resultSummary.className = "result-summary is-running";
-  resultIcon.textContent = "…";
+  setResultIcon("busy");
   resultTitle.textContent = "Verifying";
   resultDetail.textContent = "Dafny → Boogie → Z3 WASM";
   verificationStage.textContent = "Verification running";
@@ -1289,7 +1403,7 @@ async function runVerification(options = {}) {
   } catch (error) {
     if (String(error?.message) === "cancelled") {
       resultSummary.className = "result-summary is-idle";
-      resultIcon.textContent = "◇";
+      setResultIcon("idle");
       resultTitle.textContent = "Cancelled";
       resultDetail.textContent = "Verification aborted; the verifier is restarting.";
       verificationStage.textContent = "Cancelled";
@@ -1339,6 +1453,7 @@ liveToggle.addEventListener("click", () => {
   liveMode = !liveMode;
   liveToggle.setAttribute("aria-pressed", String(liveMode));
   liveToggle.classList.toggle("is-active", liveMode);
+  document.querySelector("#live-state").textContent = liveMode ? "on" : "off";
   if (liveMode) {
     scheduleLiveVerify();
   } else {
@@ -1425,7 +1540,7 @@ function appendRunOutput(text) {
 
 function showRunOutcome(kind, title, detail, stage) {
   resultSummary.className = "result-summary " + kind;
-  resultIcon.textContent = kind === "is-success" ? "✓" : kind === "is-error" ? "×" : "◇";
+  setResultIcon(kind === "is-success" ? "check" : kind === "is-error" ? "cross" : "idle");
   resultTitle.textContent = title;
   resultDetail.textContent = detail;
   verificationStage.textContent = stage;
@@ -1448,7 +1563,7 @@ async function runProgram() {
   setPanel("run");
   runOutput.textContent = "";
   showRunOutcome("is-running", "Verifying before running", "dafny run verifies first", "Run: verifying");
-  resultIcon.textContent = "…";
+  setResultIcon("busy");
   appendRunOutput("» dafny run — verify, compile to JavaScript, execute (all in this browser)\n» verifying…\n");
 
   try {
@@ -1478,7 +1593,7 @@ async function runProgram() {
     }
     appendRunOutput("» compiled to " + Math.round(compiled.js.length / 1024) + " KB of JavaScript — running Main…\n\n");
     showRunOutcome("is-running", "Running", "Executing the compiled JavaScript", "Run: executing");
-    resultIcon.textContent = "…";
+    setResultIcon("busy");
     const timeoutMs = limitValue > 0 ? limitValue * 1000 : limitValue < 0 ? 0 : 30000;
     const bignumberSource = await loadBignumberSource();
     const startedAt = performance.now();
@@ -1498,7 +1613,7 @@ async function runProgram() {
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
     if (result.ok) {
       if (!printedAnything) {
-        appendRunOutput("» Main printed nothing — the JS tab shows what actually ran\n");
+        appendRunOutput("» Main printed nothing — the compiled program is under internals\n");
       }
       appendRunOutput("\n» program finished in " + seconds + "s\n");
       showRunOutcome("is-success", "Program finished",
@@ -1578,9 +1693,7 @@ jsCopyButton.addEventListener("click", async () => {
   const script = await buildRunnableScript();
   window.__runnableJs = script;
   const copied = await copyText(script);
-  const label = jsCopyButton.textContent;
-  jsCopyButton.textContent = copied ? "Copied ✓" : "Copy failed";
-  setTimeout(() => { jsCopyButton.textContent = label; }, 1600);
+  flashLabel(jsCopyButton, copied ? "Copied" : "Copy failed");
 });
 
 // ---------- Share (permalinks) and Embed ----------
@@ -1616,6 +1729,13 @@ async function loadSharedCode() {
   }
 }
 
+function flashLabel(button, text) {
+  const label = button.querySelector(".menu-label");
+  const original = label.textContent;
+  label.textContent = text;
+  setTimeout(() => { label.textContent = original; }, 1600);
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -1642,9 +1762,7 @@ shareButton.addEventListener("click", async () => {
   const url = shareBaseUrl() + "#code=" + fragment;
   window.__shareUrl = url;
   const copied = await copyText(url);
-  const label = shareButton.textContent;
-  shareButton.textContent = copied ? "Link copied ✓" : "Copy failed";
-  setTimeout(() => { shareButton.textContent = label; }, 1600);
+  flashLabel(shareButton, copied ? "Link copied" : "Copy failed");
 });
 
 embedButton.addEventListener("click", async () => {
@@ -1654,19 +1772,7 @@ embedButton.addEventListener("click", async () => {
     `  loading="lazy" title="Dafny Verify"></iframe>`;
   window.__embedSnippet = snippet;
   const copied = await copyText(snippet);
-  const label = embedButton.textContent;
-  embedButton.textContent = copied ? "Snippet copied ✓" : "Copy failed";
-  setTimeout(() => { embedButton.textContent = label; }, 1600);
-});
-
-exampleSelect.addEventListener("change", () => {
-  const source = examples[exampleSelect.value] ?? examples.abs;
-  editor.dispatch({
-    changes: { from: 0, to: editor.state.doc.length, insert: source },
-    selection: { anchor: 0 },
-    effects: EditorView.scrollIntoView(0, { y: "start" })
-  });
-  editor.focus();
+  flashLabel(embedButton, copied ? "Snippet copied" : "Copy failed");
 });
 
 loadSharedCode();

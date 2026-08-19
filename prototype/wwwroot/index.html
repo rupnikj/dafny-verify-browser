@@ -52,58 +52,75 @@
           <span class="modified-dot" id="modified-dot" title="Modified">●</span>
         </div>
         <div class="toolbar-actions">
-          <label class="example-picker" title="Per-obligation solver time limit (like dafny verify --verification-time-limit)">
-            <span class="sr-only">Verification time limit</span>
-            <select id="time-limit">
-              <option value="10">10s limit</option>
-              <option value="30" selected>30s limit (CLI default)</option>
-              <option value="120">120s limit</option>
-              <option value="-1">no limit</option>
-            </select>
-          </label>
-          <label class="example-picker">
-            <span class="sr-only">Load example</span>
-            <select id="example">
-              <optgroup label="Examples">
-                <option value="abs">Abs (verifies)</option>
-                <option value="bad">Bad (fails)</option>
-                <option value="max">MaxArray (loop invariants)</option>
-                <option value="leap">LeapYear (find the bug)</option>
-                <option value="sum">SumArray (off by one)</option>
-                <option value="first">First (empty case)</option>
-                <option value="count">CountRange (fencepost)</option>
-                <option value="fastfib">FastFib (verify &amp; run)</option>
-              </optgroup>
-              <optgroup label="rise4fun classics">
-                <option value="r4f_hello">Hello (is it correct?)</option>
-                <option value="r4f_fib">Fibonacci (termination)</option>
-                <option value="r4f_ack">Ackermann (verifies)</option>
-                <option value="r4f_add">Add (fix the invariant)</option>
-                <option value="r4f_mul">Mul (find the error)</option>
-                <option value="r4f_countton">CountToN (terminates?)</option>
-                <option value="r4f_countreturn">CountToAndReturnN (make it verify)</option>
-                <option value="r4f_cube">Cube (fix the program)</option>
-                <option value="r4f_zunebug">ZuneBug (infinite loop)</option>
-                <option value="r4f_zunefixed">ZuneBug (fixed)</option>
-                <option value="r4f_summax">VSTTE'10 SumMax (puzzle)</option>
-              </optgroup>
-            </select>
-          </label>
-          <button class="tutorial-toggle" id="share" type="button" disabled
-            title="Copy a link that opens this exact program, verifying live, in the recipient's browser — the code travels in the URL fragment and is never sent to any server">Share</button>
-          <button class="tutorial-toggle" id="embed" type="button" disabled
-            title="Copy an iframe snippet that embeds this program as a verifiable widget in any web page">Embed</button>
-          <button class="tutorial-toggle" id="live-toggle" type="button" aria-pressed="false"
-            title="Re-verify automatically as you type (after a short pause)">Live</button>
-          <button class="tutorial-toggle" id="tutorial-toggle" type="button" aria-pressed="false" title="The classic Dafny tutorial, runnable in this page">Tutorial</button>
+          <div class="toolbar-menu">
+            <button class="menu-button" id="examples-menu-button" type="button" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.2C6.6 2 4.4 1.7 2.2 2v10.7c2.2-.3 4.4 0 5.8 1.2 1.4-1.2 3.6-1.5 5.8-1.2V2c-2.2-.3-4.4 0-5.8 1.2z"/><path d="M8 3.2v10.7"/></svg><span>Examples &amp; Tutorial</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+            </button>
+            <div class="dropdown" id="examples-menu" hidden>
+            <button class="menu-item" id="tutorial-toggle" type="button" aria-pressed="false" title="The classic Dafny tutorial, runnable in this page"><span class="menu-label">Tutorial</span><span class="hint">side-by-side guide</span></button>
+            <div class="menu-sep"></div>
+            <div class="menu-head">Examples</div>
+            <button class="menu-item" type="button" data-example="abs"><span class="menu-label">Abs</span><span class="hint">verifies</span></button>
+            <button class="menu-item" type="button" data-example="bad"><span class="menu-label">Bad</span><span class="hint">fails</span></button>
+            <button class="menu-item" type="button" data-example="max"><span class="menu-label">MaxArray</span><span class="hint">loop invariants</span></button>
+            <button class="menu-item" type="button" data-example="leap"><span class="menu-label">LeapYear</span><span class="hint">find the bug</span></button>
+            <button class="menu-item" type="button" data-example="sum"><span class="menu-label">SumArray</span><span class="hint">off by one</span></button>
+            <button class="menu-item" type="button" data-example="first"><span class="menu-label">First</span><span class="hint">empty case</span></button>
+            <button class="menu-item" type="button" data-example="count"><span class="menu-label">CountRange</span><span class="hint">fencepost</span></button>
+            <button class="menu-item" type="button" data-example="fastfib"><span class="menu-label">FastFib</span><span class="hint">verify &amp; run</span></button>
+            <div class="menu-head">rise4fun classics</div>
+            <button class="menu-item" type="button" data-example="r4f_hello"><span class="menu-label">Hello</span><span class="hint">is it correct?</span></button>
+            <button class="menu-item" type="button" data-example="r4f_fib"><span class="menu-label">Fibonacci</span><span class="hint">termination</span></button>
+            <button class="menu-item" type="button" data-example="r4f_ack"><span class="menu-label">Ackermann</span><span class="hint">verifies</span></button>
+            <button class="menu-item" type="button" data-example="r4f_add"><span class="menu-label">Add</span><span class="hint">fix the invariant</span></button>
+            <button class="menu-item" type="button" data-example="r4f_mul"><span class="menu-label">Mul</span><span class="hint">find the error</span></button>
+            <button class="menu-item" type="button" data-example="r4f_countton"><span class="menu-label">CountToN</span><span class="hint">terminates?</span></button>
+            <button class="menu-item" type="button" data-example="r4f_countreturn"><span class="menu-label">CountToAndReturnN</span><span class="hint">make it verify</span></button>
+            <button class="menu-item" type="button" data-example="r4f_cube"><span class="menu-label">Cube</span><span class="hint">fix the program</span></button>
+            <button class="menu-item" type="button" data-example="r4f_zunebug"><span class="menu-label">ZuneBug</span><span class="hint">infinite loop</span></button>
+            <button class="menu-item" type="button" data-example="r4f_zunefixed"><span class="menu-label">ZuneBug</span><span class="hint">fixed</span></button>
+            <button class="menu-item" type="button" data-example="r4f_summax"><span class="menu-label">VSTTE'10 SumMax</span><span class="hint">puzzle</span></button>
+            </div>
+          </div>
+          <span class="toolbar-spacer"></span>
+          <div class="toolbar-menu">
+            <button class="menu-button" id="share-menu-button" type="button" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5H4A1.5 1.5 0 0 0 2.5 5v7A1.5 1.5 0 0 0 4 13.5h7a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M9.5 2.5h4v4"/><path d="M13.5 2.5 7.5 8.5"/></svg><span>Share</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+            </button>
+            <div class="dropdown dropdown-right" id="share-menu" hidden>
+              <button class="menu-item keep-open" id="share" type="button"
+                title="The code travels in the URL fragment and is never sent to any server"><span class="menu-label">Copy link</span><span class="hint">opens &amp; verifies anywhere</span></button>
+              <button class="menu-item keep-open" id="embed" type="button"
+                title="An iframe snippet that embeds this program as a verifiable widget in any web page"><span class="menu-label">Copy embed snippet</span><span class="hint">iframe for blogs</span></button>
+            </div>
+          </div>
+          <div class="toolbar-menu">
+            <button class="menu-button icon-only" id="settings-menu-button" type="button" aria-haspopup="true" aria-expanded="false" title="Verification settings" aria-label="Verification settings">
+              <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5h6M13 4.5h1"/><circle cx="10.5" cy="4.5" r="1.7"/><path d="M2 11.5h1M8 11.5h6"/><circle cx="5.5" cy="11.5" r="1.7"/></svg>
+            </button>
+            <div class="dropdown dropdown-right" id="settings-menu" hidden>
+              <div class="menu-head">Verification</div>
+              <label class="menu-row" title="Per-obligation solver time limit (like dafny verify --verification-time-limit)">
+                <span>Time limit</span>
+                <select id="time-limit">
+                  <option value="10">10 s</option>
+                  <option value="30" selected>30 s (CLI default)</option>
+                  <option value="120">120 s</option>
+                  <option value="-1">no limit</option>
+                </select>
+              </label>
+              <button class="menu-item keep-open" id="live-toggle" type="button" aria-pressed="false"
+                title="Re-verify automatically as you type (after a short pause)"><span class="menu-label">Live — verify as you type</span><span class="hint" id="live-state">off</span></button>
+            </div>
+          </div>
           <button class="verify-button" id="verify" type="button" disabled>
-            <span class="play-icon" aria-hidden="true">✓</span>
+            <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6.5 12 13 4.5"/></svg>
             <span id="verify-label">Verify</span>
             <kbd id="verify-kbd">⌘↵</kbd>
           </button>
           <button class="verify-button run-button" id="run" type="button" disabled
             title="Verify, compile to JavaScript, and execute Main in this page — like `dafny run`">
-            <span class="play-icon" aria-hidden="true">▶</span>
+            <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4L13.2 8z" fill="currentColor"/></svg>
             <span id="run-label">Run</span>
           </button>
         </div>
@@ -119,21 +136,27 @@
             <button class="panel-tab is-active" id="problems-tab" type="button" role="tab" aria-selected="true">
               Problems <span class="badge" id="problem-count">0</span>
             </button>
-            <button class="panel-tab" id="output-tab" type="button" role="tab" aria-selected="false">Output</button>
             <button class="panel-tab" id="run-tab" type="button" role="tab" aria-selected="false">Run</button>
-            <button class="panel-tab" id="js-tab" type="button" role="tab" aria-selected="false"
-              title="The JavaScript your verified program compiles to">JS</button>
-            <button class="panel-tab" id="smt-tab" type="button" role="tab" aria-selected="false"
-              title="The actual SMT-LIB conversation between Boogie and Z3 for the last verification">SMT</button>
+            <button class="panel-tab" id="hood-tab" type="button" role="tab" aria-selected="false" hidden>Under the hood</button>
+            <button class="internals-reveal" id="internals-reveal" type="button"
+              title="Compiled JavaScript, the SMT conversation with Z3, and the raw result"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4 2 8l3.5 4"/><path d="M10.5 4 14 8l-3.5 4"/></svg><span>internals</span></button>
           </div>
 
           <section class="result-summary is-idle" id="result-summary" aria-live="polite">
-            <span class="result-icon" id="result-icon">◇</span>
+            <span class="result-icon" id="result-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.9" y="4.9" width="6.2" height="6.2" rx="1" transform="rotate(45 8 8)" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>
             <div>
               <strong id="result-title">Ready to verify</strong>
               <span id="result-detail">All computation stays in this browser.</span>
             </div>
           </section>
+
+          <div class="hood-bar" id="hood-bar" hidden>
+            <button class="seg is-active" id="js-tab" type="button" role="tab" title="The JavaScript your verified program compiles to">JS</button>
+            <button class="seg" id="smt-tab" type="button" role="tab" title="The actual SMT-LIB conversation between Boogie and Z3">SMT</button>
+            <button class="seg" id="output-tab" type="button" role="tab" title="The raw verification result">Raw result</button>
+            <span class="hood-spacer"></span>
+            <button class="internals-hide" id="internals-hide" type="button" title="Hide the internals tab"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg><span>hide</span></button>
+          </div>
 
           <div class="panel-view" id="problems-view" role="tabpanel" aria-labelledby="problems-tab">
             <div class="problem-filters" id="problem-filters" hidden>
@@ -143,7 +166,7 @@
             </div>
             <ol class="problems-list" id="problems-list"></ol>
             <div class="empty-state" id="empty-state">
-              <span aria-hidden="true">✓</span>
+              <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M3 8.5 6.5 12 13 4.5"/></svg>
               <p>No problems to show.</p>
             </div>
           </div>
@@ -160,7 +183,7 @@
             <div class="js-toolbar">
               <span class="js-toolbar-note">runtime stripped for reading</span>
               <button id="js-copy-runnable" type="button" disabled
-                title="Copy the complete program — runtime, bignumber.js, and console shims included — ready to paste into any browser console or node">⧉ Copy runnable script</button>
+                title="Copy the complete program — runtime, bignumber.js, and console shims included — ready to paste into any browser console or node"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2A1.5 1.5 0 0 0 9 2H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 10h1.5"/></svg><span class="menu-label">Copy runnable script</span></button>
             </div>
             <div id="js-output" class="js-editor" aria-label="Compiled JavaScript">Run a program to see the JavaScript it compiles to.</div>
           </div>
