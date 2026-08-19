@@ -149,6 +149,11 @@
           </div>
 
           <div class="panel-view js-view" id="js-view" role="tabpanel" aria-labelledby="js-tab" hidden>
+            <div class="js-toolbar">
+              <span class="js-toolbar-note">runtime stripped for reading</span>
+              <button id="js-copy-runnable" type="button" disabled
+                title="Copy the complete program — runtime, bignumber.js, and console shims included — ready to paste into any browser console or node">⧉ Copy runnable script</button>
+            </div>
             <div id="js-output" class="js-editor" aria-label="Compiled JavaScript">Run a program to see the JavaScript it compiles to.</div>
           </div>
 

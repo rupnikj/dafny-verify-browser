@@ -157,7 +157,27 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   }
   await page.click("#js-tab");
   await page.waitForSelector("#js-view .cm-editor", { timeout: 10000 });
-  console.log("  run: FastFib executed, output verified; JS tab shows compiled program");
+  // "Copy runnable script" must produce text that actually runs when pasted
+  // into a console: eval it in the page and capture console.log output.
+  await page.click("#js-copy-runnable");
+  await page.waitForFunction(() => typeof window.__runnableJs === "string", undefined, { timeout: 10000 });
+  const consoleRun = await page.evaluate(() => {
+    const lines = [];
+    const original = console.log;
+    console.log = (...args) => lines.push(args.join(" "));
+    try {
+      (0, eval)(window.__runnableJs);
+    } catch (error) {
+      lines.push("THREW: " + error.message);
+    } finally {
+      console.log = original;
+    }
+    return lines;
+  });
+  if (!consoleRun.some(line => line.includes("Fib(40) = 102334155"))) {
+    throw new Error("runnable script console output wrong: " + consoleRun.slice(0, 5).join(" | "));
+  }
+  console.log("  run: FastFib executed, output verified; JS tab + runnable copy verified");
 }, { retries: 1 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero

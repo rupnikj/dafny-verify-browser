@@ -524,6 +524,30 @@ body.tutorial-on .panel {
 .output-view { padding: 0; background: #12161c; }
 
 .js-view { padding: 0; background: #12161c; }
+.js-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #161b23;
+  border-bottom: 1px solid #262e3a;
+}
+.js-toolbar-note { color: #7d8896; font-size: 10px; }
+.js-toolbar button {
+  font: 11px/1 inherit;
+  color: #d8dee9;
+  background: #1d2430;
+  border: 1px solid #3b4655;
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.js-toolbar button:hover:not(:disabled) { border-color: #2c8ce8; }
+.js-toolbar button:disabled { opacity: .45; cursor: default; }
 .js-view .js-editor {
   min-height: 100%;
   color: #7d8896;

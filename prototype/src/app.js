@@ -1244,12 +1244,15 @@ let runInFlight = null; // { phase: "verify" | "execute", cancelExecute?: () => 
 // documents, so gates read window.__compiledJs, not the rendered DOM.
 const jsLanguage = StreamLanguage.define(javascript);
 let jsEditor = null;
+let lastCompiled = null;
 
 function showCompiledJs(compiled) {
   const marker = compiled.js.indexOf("// Dafny program");
   const program = (marker >= 0 ? compiled.js.slice(marker) : compiled.js) +
     (compiled.callToMain ? "\n" + compiled.callToMain : "");
   window.__compiledJs = program;
+  lastCompiled = compiled;
+  jsCopyButton.disabled = false;
   if (!jsEditor) {
     jsOutput.textContent = "";
     jsEditor = new EditorView({
@@ -1400,6 +1403,73 @@ async function runProgram() {
 }
 
 runButton.addEventListener("click", runProgram);
+
+// "Copy runnable script": the JS tab displays the program with the runtime
+// stripped for reading, so a raw copy-paste hits `_dafny is not defined`.
+// This assembles the complete artifact — bignumber.js, the full compiled
+// text (runtime included), the two node shims with stdout going to
+// console.log — wrapped in an IIFE so it runs when pasted into any browser
+// console or node. The require shim must return globalThis.BigNumber: the
+// runtime's own `const BigNumber = require(...)` shares the IIFE scope, and
+// returning the bare name would read that const inside its own
+// initialization (a temporal-dead-zone error).
+const jsCopyButton = document.querySelector("#js-copy-runnable");
+
+async function buildRunnableScript() {
+  const bignumberSource = await loadBignumberSource();
+  return "// Compiled Dafny program — paste into any browser console (or node) to run it.\n" +
+    "(() => {\n" +
+    bignumberSource + "\n" +
+    "let __out = \"\";\n" +
+    "const process = {\n" +
+    "  stdout: {\n" +
+    "    write: text => {\n" +
+    "      __out += String(text);\n" +
+    "      let nl;\n" +
+    "      while ((nl = __out.indexOf(\"\\n\")) >= 0) { console.log(__out.slice(0, nl)); __out = __out.slice(nl + 1); }\n" +
+    "    },\n" +
+    "    setEncoding: () => {}\n" +
+    "  },\n" +
+    "  argv: [\"node\", \"main.dfy\"],\n" +
+    "  exitCode: 0\n" +
+    "};\n" +
+    "const require = name => {\n" +
+    "  if (name === \"bignumber.js\") return globalThis.BigNumber;\n" +
+    "  if (name === \"process\") return process;\n" +
+    "  throw new Error(\"module not available: \" + name);\n" +
+    "};\n" +
+    lastCompiled.js + "\n" +
+    (lastCompiled.callToMain || "") + "\n" +
+    "if (__out) console.log(__out);\n" +
+    "})();";
+}
+
+jsCopyButton.addEventListener("click", async () => {
+  if (!lastCompiled) return;
+  const script = await buildRunnableScript();
+  window.__runnableJs = script;
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(script);
+    copied = true;
+  } catch {
+    // Clipboard API can be unavailable (permissions, sandboxes) — fall back
+    // to the selection-based path.
+    try {
+      const holder = document.createElement("textarea");
+      holder.value = script;
+      holder.style.position = "fixed";
+      holder.style.opacity = "0";
+      document.body.append(holder);
+      holder.select();
+      copied = document.execCommand("copy");
+      holder.remove();
+    } catch {}
+  }
+  const label = jsCopyButton.textContent;
+  jsCopyButton.textContent = copied ? "Copied ✓" : "Copy failed";
+  setTimeout(() => { jsCopyButton.textContent = label; }, 1600);
+});
 
 exampleSelect.addEventListener("change", () => {
   const source = examples[exampleSelect.value] ?? examples.abs;
