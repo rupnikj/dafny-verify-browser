@@ -217,6 +217,8 @@
 
           <div class="panel-view js-view" id="smt-view" role="tabpanel" aria-labelledby="smt-tab" hidden>
             <div class="js-toolbar">
+              <label class="sr-only" for="smt-obligation">Proof obligation</label>
+              <select id="smt-obligation" hidden></select>
               <span class="js-toolbar-note" id="smt-note">what Boogie actually sends to Z3, and what comes back</span>
             </div>
             <div id="smt-output" class="js-editor" aria-label="SMT-LIB transcript">Verify a program, then open this tab to see the SMT-LIB conversation with Z3.</div>

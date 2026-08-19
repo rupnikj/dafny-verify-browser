@@ -1143,6 +1143,7 @@ async function renderBoogie() {
             lineNumbers(),
             highlightSpecialChars(),
             drawSelection(),
+            bracketMatching(),
             search({ top: true }),
             boogieLanguage,
             syntaxHighlighting(dafnyHighlight),
@@ -1252,6 +1253,79 @@ const smtLanguage = StreamLanguage.define({
 const SMT_RENDER_LIMIT = 4 * 1024 * 1024;
 let smtEditor = null;
 let smtDirty = false;
+let smtSections = null;
+const smtObligationSelect = document.querySelector("#smt-obligation");
+
+// Group the raw entry list into a session preamble (options + the Dafny
+// prelude, sent before the first obligation) and one section per proof
+// obligation, keeping absolute exchange numbers for cross-reference.
+function buildSmtSections(entries) {
+  const sections = { preamble: [], obligations: [] };
+  let current = null;
+  let exchange = 0;
+  for (const entry of entries) {
+    if (entry.kind === "problem") {
+      // Boogie announces the problem AFTER transmitting its setup and
+      // verification condition; the previous obligation's own exchanges end
+      // at its (pop 1). Everything after that belongs to the new obligation.
+      const previousParts = current ? current.parts : sections.preamble;
+      let split = previousParts.length;
+      for (let i = previousParts.length - 1; i >= 0; i--) {
+        if (previousParts[i].includes("(pop 1)")) { split = i + 1; break; }
+        if (i === 0) split = 0;
+      }
+      current = { name: entry.input, parts: previousParts.splice(split) };
+      sections.obligations.push(current);
+      continue;
+    }
+    exchange += 1;
+    const text = `;; ---- exchange ${exchange}: Boogie sends ----\n` +
+      entry.input.trim() + "\n;; ---- Z3 answers ----\n" +
+      entry.output.trim().split("\n").map(line => ";;   " + line).join("\n") + "\n\n";
+    (current ? current.parts : sections.preamble).push(text);
+  }
+  return { ...sections, totalExchanges: exchange };
+}
+
+function renderSmtSlice() {
+  if (!smtSections || !smtEditor) return;
+  const choice = smtObligationSelect.value;
+  let parts, label;
+  if (choice === "preamble") {
+    parts = smtSections.preamble;
+    label = "session setup — options and the Dafny prelude, sent once per solver session";
+  } else if (choice === "all") {
+    parts = [...smtSections.preamble];
+    for (const obligation of smtSections.obligations) {
+      parts.push(`\n;; ============ proof obligation: ${obligation.name} ============\n\n`, ...obligation.parts);
+    }
+    label = smtSections.totalExchanges + " exchanges";
+  } else {
+    const obligation = smtSections.obligations[Number(choice)];
+    parts = obligation ? obligation.parts : [];
+    label = obligation ? obligation.parts.length + " exchange" + (obligation.parts.length === 1 ? "" : "s") : "";
+  }
+  let text = parts.join("");
+  if (text.length > SMT_RENDER_LIMIT) {
+    text = text.slice(0, SMT_RENDER_LIMIT) +
+      "\n;; …truncated for display (" + ((text.length / 1048576).toFixed(1)) + " MB total)\n";
+  }
+  smtNote.textContent = label + ", " + (text.length / 1024).toFixed(0) + " KB of SMT-LIB";
+  smtEditor.dispatch({ changes: { from: 0, to: smtEditor.state.doc.length, insert: text } });
+  if (choice !== "preamble" && choice !== "all") {
+    // Open at the verification condition — everything above (push 1) is the
+    // per-obligation resend of options and the Dafny prelude.
+    const vc = text.indexOf("(push 1)");
+    if (vc >= 0) {
+      smtEditor.dispatch({
+        selection: { anchor: vc },
+        effects: EditorView.scrollIntoView(vc, { y: "start", yMargin: 8 })
+      });
+    }
+  }
+}
+
+smtObligationSelect.addEventListener("change", renderSmtSlice);
 
 async function renderSmtTranscript() {
   if (!smtDirty) return;
@@ -1262,27 +1336,29 @@ async function renderSmtTranscript() {
       smtNote.textContent = "no transcript recorded for the last verification";
       return;
     }
-    const parts = [];
-    let exchange = 0;
-    for (const entry of entries) {
-      if (entry.kind === "problem") {
-        parts.push(`\n;; ============ proof obligation: ${entry.input} ============\n`);
-      } else {
-        exchange += 1;
-        parts.push(`\n;; ---- exchange ${exchange}: Boogie sends ----\n`);
-        parts.push(entry.input.trim() + "\n");
-        parts.push(`;; ---- Z3 answers ----\n`);
-        parts.push(entry.output.trim().split("\n").map(line => ";;   " + line).join("\n") + "\n");
-      }
+    smtSections = buildSmtSections(entries);
+    // Full text stays available for tooling (CodeMirror virtualizes the view).
+    window.__smtText = [...smtSections.preamble,
+      ...smtSections.obligations.flatMap(o => [`;; ==== proof obligation: ${o.name} ====\n`, ...o.parts])].join("");
+    smtObligationSelect.replaceChildren();
+    for (const [index, obligation] of smtSections.obligations.entries()) {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = obligation.name;
+      smtObligationSelect.append(option);
     }
-    let text = parts.join("");
-    if (text.length > SMT_RENDER_LIMIT) {
-      text = text.slice(0, SMT_RENDER_LIMIT) +
-        "\n;; …truncated for display (" + ((text.length / 1048576).toFixed(1)) + " MB total)\n";
+    if (smtSections.preamble.length > 0) {
+      const preambleOption = document.createElement("option");
+      preambleOption.value = "preamble";
+      preambleOption.textContent = "session setup (" + smtSections.preamble.length + " exchanges)";
+      smtObligationSelect.append(preambleOption);
     }
-    window.__smtText = text;
-    smtNote.textContent = exchange + " exchanges, " +
-      (text.length / 1024).toFixed(0) + " KB of SMT-LIB";
+    const allOption = document.createElement("option");
+    allOption.value = "all";
+    allOption.textContent = "everything (" + smtSections.totalExchanges + " exchanges)";
+    smtObligationSelect.append(allOption);
+    smtObligationSelect.hidden = false;
+    smtObligationSelect.value = smtSections.obligations.length > 0 ? "0" : "all";
     if (!smtEditor) {
       smtOutput.textContent = "";
       smtEditor = new EditorView({
@@ -1293,6 +1369,7 @@ async function renderSmtTranscript() {
             lineNumbers(),
             highlightSpecialChars(),
             drawSelection(),
+            bracketMatching(),
             search({ top: true }),
             smtLanguage,
             syntaxHighlighting(dafnyHighlight),
@@ -1303,7 +1380,7 @@ async function renderSmtTranscript() {
         })
       });
     }
-    smtEditor.dispatch({ changes: { from: 0, to: smtEditor.state.doc.length, insert: text } });
+    renderSmtSlice();
   } catch (error) {
     smtNote.textContent = "could not load the transcript: " + (error?.message ?? error);
     smtDirty = true;
@@ -1811,6 +1888,7 @@ function showCompiledJs(compiled) {
           lineNumbers(),
           highlightSpecialChars(),
           drawSelection(),
+          bracketMatching(),
           search({ top: true }),
           jsLanguage,
           syntaxHighlighting(dafnyHighlight),
