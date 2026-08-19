@@ -1118,6 +1118,46 @@ const BOOGIE_KEYWORDS = new Set(["type", "const", "function", "axiom", "var",
   "old", "forall", "exists", "lambda", "cast", "div", "mod", "uses", "hideable", "reveal"]);
 const BOOGIE_TYPES = new Set(["bool", "int", "real", "bv8", "bv16", "bv32", "bv64"]);
 
+// Hover explanations for the recurring verification-encoding symbols.
+const ENCODING_GLOSSARY = [
+  [/^\$?Heap[@\d]*$/, "the model of Dafny's mutable heap — a map from (reference, field) to values; updated on writes, quantified over in frame axioms"],
+  [/^ControlFlow$/, "Boogie's encoding of the program's control-flow graph: ControlFlow(0, block) picks the successor, letting one formula cover every path"],
+  [/^T@U$/, "the universal box sort — every Dafny value is boxed into it so one SMT sort covers all types"],
+  [/^T@T$/, "the sort of type descriptors — Dafny types reified as values, for typing axioms"],
+  [/^\$?(Box|Unbox)$/, "coercion between a typed value and the universal box sort T@U"],
+  [/^alloc$/, "the ghost field marking whether an object is allocated in a given heap"],
+  [/^tickleBool$/, "a benign axiom that mentions both booleans, nudging Z3's triggers — pure solver pragmatics"],
+  [/^\$generated(@@\d+)?$/, "a normalized identifier (solver-cache determinism) — flip 'readable names' to see the real one"],
+  [/^\$_ModifiesFrame[@\d]*$/, "the method's frame: which (object, field) pairs it may modify"],
+  [/^\$_reverifyPost$/, "bookkeeping for Dafny's incremental re-verification of postconditions"],
+  [/^(Tag|Tclass\..*|TagClass.*)$/, "type-descriptor plumbing: tags distinguish which Dafny type a descriptor stands for"],
+  [/^UOrdering\d$/, "ordering predicates used for datatype rank comparisons (termination proofs)"]
+];
+
+function glossaryTooltip(view, pos) {
+  const { from, to, text } = view.state.doc.lineAt(pos);
+  let start = pos - from, end = pos - from;
+  const isWord = ch => /[\w$@.]/.test(ch);
+  while (start > 0 && isWord(text[start - 1])) start--;
+  while (end < text.length && isWord(text[end])) end++;
+  if (start === end) return null;
+  const word = text.slice(start, end);
+  const entry = ENCODING_GLOSSARY.find(([pattern]) => pattern.test(word));
+  if (!entry) return null;
+  return {
+    pos: from + start,
+    end: from + end,
+    above: true,
+    create() {
+      const dom = document.createElement("div");
+      dom.className = "cm-tooltip-diagnostic";
+      dom.textContent = word + " — " + entry[1];
+      return { dom };
+    }
+  };
+}
+const glossaryHover = hoverTooltip(glossaryTooltip, { hoverTime: 300 });
+
 let boogieEditor = null;
 let boogieDirty = false;
 
@@ -1146,6 +1186,7 @@ async function renderBoogie() {
             bracketMatching(),
             search({ top: true }),
             boogieLanguage,
+            glossaryHover,
             syntaxHighlighting(dafnyHighlight),
             themedEditorExtension(() => boogieEditor),
             EditorState.readOnly.of(true),
@@ -1155,13 +1196,21 @@ async function renderBoogie() {
       });
     }
     boogieEditor.dispatch({ changes: { from: 0, to: boogieEditor.state.doc.length, insert: text } });
-    // Open at the first implementation — the readable part — rather than
-    // the module-level type/axiom plumbing above it.
-    const firstImplementation = text.indexOf("\nimplementation");
-    if (firstImplementation >= 0) {
+    // Open at the statement matching the editor cursor when possible (the
+    // translation carries /input.dfy(line,col) breadcrumbs), else at the
+    // first implementation rather than the module type/axiom plumbing.
+    const cursorLine = editor.state.doc.lineAt(editor.state.selection.main.head).number;
+    let target = -1;
+    for (let line = cursorLine; line >= 1 && target < 0; line--) {
+      target = text.indexOf("/input.dfy(" + line + ",");
+    }
+    if (target < 0) {
+      target = text.indexOf("\nimplementation") + 1;
+    }
+    if (target > 0) {
       boogieEditor.dispatch({
-        selection: { anchor: firstImplementation + 1 },
-        effects: EditorView.scrollIntoView(firstImplementation + 1, { y: "start", yMargin: 8 })
+        selection: { anchor: target },
+        effects: EditorView.scrollIntoView(target, { y: "center" })
       });
     }
   } catch (error) {
@@ -1256,6 +1305,8 @@ let smtDirty = false;
 let smtSections = null;
 const smtObligationSelect = document.querySelector("#smt-obligation");
 const smtReadable = document.querySelector("#smt-readable");
+const smtHidePrelude = document.querySelector("#smt-hide-prelude");
+smtHidePrelude.addEventListener("change", () => renderSmtSlice());
 
 smtReadable.addEventListener("change", () => {
   if (running || runInFlight) {
@@ -1367,13 +1418,23 @@ function renderSmtSlice() {
     label = obligation ? obligation.parts.length + " exchange" + (obligation.parts.length === 1 ? "" : "s") : "";
   }
   let text = parts.join("");
+  if (choice !== "preamble" && choice !== "all" && smtHidePrelude.checked) {
+    // Each obligation re-sends options + the Dafny prelude before its query
+    // (the transport resets per obligation); start the display at the VC.
+    const vc = text.indexOf("(push 1)");
+    if (vc > 0) {
+      const hidden = text.slice(0, vc).split("\n").length;
+      text = ";; (options + prelude resend hidden — " + hidden +
+        " lines; uncheck 'hide prelude' to show)\n\n" + text.slice(vc);
+    }
+  }
   if (text.length > SMT_RENDER_LIMIT) {
     text = text.slice(0, SMT_RENDER_LIMIT) +
       "\n;; …truncated for display (" + ((text.length / 1048576).toFixed(1)) + " MB total)\n";
   }
   smtNote.textContent = label + ", " + (text.length / 1024).toFixed(0) + " KB of SMT-LIB";
   smtEditor.dispatch({ changes: { from: 0, to: smtEditor.state.doc.length, insert: text } });
-  if (choice !== "preamble" && choice !== "all") {
+  if (choice !== "preamble" && choice !== "all" && !smtHidePrelude.checked) {
     // Open at the verification condition — everything above (push 1) is the
     // per-obligation resend of options and the Dafny prelude.
     const vc = text.indexOf("(push 1)");
@@ -1442,6 +1503,7 @@ async function renderSmtTranscript() {
             bracketMatching(),
             search({ top: true }),
             smtLanguage,
+            glossaryHover,
             syntaxHighlighting(dafnyHighlight),
             themedEditorExtension(() => smtEditor),
             EditorState.readOnly.of(true),
@@ -2209,6 +2271,15 @@ async function copyText(text) {
     }
   }
 }
+
+// "How it works" carries the current program to the anatomy page (from
+// file:// the canonical hosted page — a local path helps nobody).
+document.querySelector("#anatomy-link").addEventListener("click", async event => {
+  event.preventDefault();
+  const link = shareBaseUrl() + "anatomy.html#code=" +
+    await encodeShareFragment(editor.state.doc.toString());
+  window.open(link, "_blank", "noopener");
+});
 
 shareButton.addEventListener("click", async () => {
   const fragment = await encodeShareFragment(editor.state.doc.toString());

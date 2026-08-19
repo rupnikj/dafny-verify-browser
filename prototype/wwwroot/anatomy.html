@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anatomy of a Dafny Proof</title>
+<meta name="description" content="One Dafny program, dissected live: its Boogie translation, its SMT queries, and Z3's verdict — all computed in your browser.">
+<script>
+(() => {
+  let stored = null;
+  try { stored = localStorage.getItem("dafny-verify-theme"); } catch {}
+  const dark = stored === "dark" ||
+    (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+})();
+</script>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #11151b; --panel: #171c24; --border: #303946; --text: #d8dee9;
+  --muted: #8993a4; --accent: #53a8ff; --accent-strong: #2688eb;
+  --code-bg: #12161c; --ok: #42c983; --bad: #f16d75;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f8fa; --panel: #ffffff; --border: #d0d7de; --text: #1f2328;
+  --muted: #57606a; --accent: #0969da; --accent-strong: #0969da;
+  --code-bg: #f6f8fa; --ok: #1a7f37; --bad: #cf222e;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 0 0 6px; }
+.subtitle { color: var(--muted); margin: 0 0 26px; }
+h2 { font-size: 20px; margin: 40px 0 10px; }
+p { margin: 12px 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; font-size: 13px; color: var(--muted); }
+.topbar .spacer { flex: 1; }
+pre {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; overflow-x: auto;
+  font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+}
+.stage { border-left: 3px solid var(--border); padding-left: 18px; margin: 26px 0; }
+.stage.pending pre { color: var(--muted); }
+.arrow { text-align: center; color: var(--muted); font-size: 13px; margin: 18px 0; }
+button {
+  font: 600 15px/1 inherit; color: #fff; background: var(--accent-strong);
+  border: 0; border-radius: 8px; padding: 12px 22px; cursor: pointer;
+}
+button:disabled { opacity: .55; cursor: wait; }
+#status { color: var(--muted); font-size: 13px; margin-left: 12px; }
+.verdict-line { font-weight: 700; }
+.verdict-line.ok { color: var(--ok); }
+.verdict-line.bad { color: var(--bad); }
+.note { color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <strong>Anatomy of a Dafny Proof</strong>
+    <span class="spacer"></span>
+    <a id="open-full" href="./" target="_blank" rel="noopener">Edit in Dafny Verify ↗</a>
+  </div>
+
+  <h1>What actually happens when Dafny verifies your program</h1>
+  <p class="subtitle">One program, dissected live — every stage below is computed
+  in your browser by the real Dafny, Boogie, and Z3, not illustrated.</p>
+
+  <p>Dafny's promise sounds like magic: write a specification, and the tool
+  <em>proves</em> your code meets it — for every input, not just the ones you
+  tested. The machinery behind that promise is a pipeline of three translations,
+  each mechanical, each inspectable. Press the button and watch your program go
+  through all of them.</p>
+
+  <p><button id="analyze" type="button">Analyze this program</button><span id="status">the verifier (~35 MB compressed) downloads on first use — cached afterwards</span></p>
+
+  <h2>Stage 1 — Your program: code plus claims</h2>
+  <p>A Dafny program mixes two languages: the <em>code</em> (assignments, ifs,
+  loops) and the <em>specification</em> (<code>ensures</code>,
+  <code>requires</code>, <code>invariant</code>). The specification is a claim
+  about every possible execution. This is the program being dissected — edit it
+  in the <a id="edit-link" href="./">full demo</a> and reopen this page from
+  there to dissect your own:</p>
+  <div class="stage"><pre id="stage-source">loading…</pre></div>
+
+  <div class="arrow">▼ parse · resolve · translate</div>
+
+  <h2>Stage 2 — Boogie: everything made explicit</h2>
+  <p>Dafny first translates into <strong>Boogie</strong>, a small verification
+  language. Nothing is proved yet — but everything implicit becomes explicit:
+  the heap is a real variable, each specification clause becomes an
+  <code>assert</code> or <code>assume</code>, definite-assignment and
+  termination get bookkeeping variables, and every statement keeps a breadcrumb
+  (<code>/input.dfy(line,col)</code>) pointing back at your source. This is
+  your method's translation, computed just now:</p>
+  <div class="stage pending"><pre id="stage-boogie">press “Analyze” above</pre></div>
+
+  <div class="arrow">▼ verification-condition generation</div>
+
+  <h2>Stage 3 — One formula per proof obligation</h2>
+  <p>Boogie then compresses each method into a single logical formula — the
+  <em>verification condition</em> — in
+  <a href="https://smt-lib.org" target="_blank" rel="noopener">SMT-LIB</a>, the
+  standard language of solvers. The trick to reading it: the formula states
+  that some path through your method <em>violates</em> a claim, and it is
+  handed to the solver <strong>negated</strong> — inside
+  <code>(assert (not …))</code>. Real variable names survive
+  (<code>x#0</code>, <code>y#0@1</code> — the <code>@1</code> counts
+  assignments), and <code>ControlFlow</code> encodes which path is taken:</p>
+  <div class="stage pending"><pre id="stage-smt">press “Analyze” above</pre></div>
+
+  <div class="arrow">▼ Z3 decides</div>
+
+  <h2>Stage 4 — The verdict, by double negation</h2>
+  <p>Z3 hunts for a way to satisfy that formula — that is, for a concrete
+  execution that breaks your specification. The two possible answers:</p>
+  <p><code>unsat</code> — <em>no such execution exists</em>. No input, no path,
+  no heap can violate the claim. That is what “verified” means: not “tests
+  passed”, but “a counterexample is mathematically impossible”.<br>
+  <code>sat</code> — the solver found a witness, and Dafny turns its model into
+  the counterexample you see in the demo's Problems tab.</p>
+  <div class="stage pending"><pre id="stage-verdict">press “Analyze” above</pre></div>
+
+  <p class="note">Everything above ran in this tab — the same Dafny 4.11.0,
+  Boogie 3.5.5, and Z3 4.16.0 a native install uses, compiled to WebAssembly.
+  Names are shown unnormalized for readability; the demo's
+  “Under the hood” panel has the byte-faithful default, the full transcripts,
+  and the compiled-to-JavaScript view.
+  <a href="https://github.com/rupnikj/dafny-verify-browser">Source on GitHub</a>.</p>
+</div>
+<script type="module" src="./anatomy.js"></script>
+</body>
+</html>

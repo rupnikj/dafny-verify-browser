@@ -113,6 +113,26 @@ string-building path; the JS runtime rides as an embedded resource (upstream
 keeps it in `DafnyPipeline.dll`, which also carries every other target's
 runtime — shipping one file instead keeps the payload lean).
 
+## Understanding the stack: Under the hood + the anatomy page
+
+The demo's **Under the hood** panel (revealed by the muted "internals"
+affordance) shows every stage of the pipeline for the last verification:
+the compiled **JS**, the **Boogie** translation (prelude filtered, opening
+at your method, following your cursor via `/input.dfy(line,col)`
+breadcrumbs), the **SMT** transcript sliced per proof obligation with a
+picker that cross-links to the editor, and the **raw result**. A
+"readable names" toggle re-verifies with Boogie's name normalization off,
+so the queries show `|x#0|` and `|y#0@1|` instead of `$generated@@N`
+(exploration mode — the byte-faithful default stays identical to the
+native CLI). Recurring encoding symbols (`$Heap`, `ControlFlow`, `T@U`…)
+explain themselves on hover.
+
+[**anatomy.html**](https://rupnikj.github.io/dafny-verify-browser/anatomy.html)
+is the guided version: one program dissected live through
+Dafny → Boogie → SMT → verdict, with prose between the stages — every pane
+is real output computed in the reader's browser, not an illustration. The
+demo's "How it works" link carries your current program along.
+
 ## Embedding a verifiable snippet in a blog or course page
 
 The demo's **Embed** button copies an iframe snippet like:

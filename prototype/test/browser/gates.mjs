@@ -429,6 +429,24 @@ if (withSingleFile) {
   });
 }
 
+// The anatomy page: every stage computed live on the shared COI server.
+await gate("anatomy: the pipeline essay computes all stages live", async page => {
+  await page.goto(base + "/anatomy.html", { waitUntil: "domcontentloaded" });
+  await page.click("#analyze");
+  await page.waitForFunction(
+    () => document.querySelector("#status")?.textContent.startsWith("done"),
+    undefined, { timeout: BOOT_TIMEOUT });
+  const stages = await page.evaluate(() => ({
+    boogie: document.querySelector("#stage-boogie").textContent,
+    smt: document.querySelector("#stage-smt").textContent,
+    verdict: document.querySelector("#stage-verdict").textContent
+  }));
+  if (!stages.boogie.includes("implementation") || !stages.smt.includes("(push 1)") ||
+      !stages.smt.includes("unsat") || !stages.verdict.includes("verified")) {
+    throw new Error("anatomy stages incomplete");
+  }
+});
+
 // Embed widget on a host with NO COOP/COEP headers: the page cannot be
 // cross-origin isolated, so a passing verdict proves the worker's
 // single-threaded z3-st fallback end to end — the exact situation of an
