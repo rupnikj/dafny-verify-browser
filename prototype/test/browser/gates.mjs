@@ -256,6 +256,12 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (obligationOptions < 2) {
     throw new Error("SMT obligation picker missing options: " + obligationOptions);
   }
+  // Method-level cross-link: picking an obligation selects its declaration
+  // in the editor (Fib lives on line 4 of the FastFib example).
+  await page.selectOption("#smt-obligation", "0");
+  await page.waitForFunction(
+    () => document.querySelector("#cursor-position")?.textContent.startsWith("Ln 4"),
+    undefined, { timeout: 5000 });
   // Readable-names mode: a quiet re-verify without name normalization puts
   // real Dafny identifiers in the transcript.
   await page.click("#smt-readable");

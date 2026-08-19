@@ -1298,6 +1298,56 @@ function buildSmtSections(entries) {
   return { ...sections, totalExchanges: exchange };
 }
 
+// Obligation names look like Impl$$_module.__default.FastFib or
+// CheckWellformed$$_module.__default.Fib; surface the method name and the
+// obligation kind, and link both ways with the editor (method level).
+function obligationParts(name) {
+  const [kind, path] = name.split("$$");
+  const method = (path ?? name).split(".").pop();
+  const kindLabel = kind === "Impl" ? "correctness"
+    : kind === "CheckWellformed" ? "well-formedness"
+    : kind;
+  return { method, kindLabel };
+}
+
+function obligationLabel(name) {
+  const { method, kindLabel } = obligationParts(name);
+  return method + " — " + kindLabel;
+}
+
+// The declaration enclosing the editor cursor, by scanning backwards.
+function declarationAtCursor() {
+  const doc = editor.state.doc.toString();
+  const head = editor.state.selection.main.head;
+  const declarations = [...doc.matchAll(/\b(?:method|function|lemma|predicate|constructor|iterator)\s+([A-Za-z_'][\w']*)/g)];
+  let enclosing = null;
+  for (const match of declarations) {
+    if (match.index <= head) enclosing = match[1];
+  }
+  return enclosing ?? declarations[0]?.[1] ?? null;
+}
+
+function obligationIndexForCursor() {
+  if (!smtSections) return null;
+  const name = declarationAtCursor();
+  if (!name) return null;
+  const index = smtSections.obligations.findIndex(o => obligationParts(o.name).method === name);
+  return index >= 0 ? index : null;
+}
+
+// Picker -> editor: selecting an obligation highlights its declaration.
+function jumpEditorToObligation(obligationName) {
+  const { method } = obligationParts(obligationName);
+  const doc = editor.state.doc.toString();
+  const match = new RegExp("\\b(?:method|function|lemma|predicate|constructor|iterator)\\s+" +
+    method.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").exec(doc);
+  if (!match) return;
+  editor.dispatch({
+    selection: { anchor: match.index, head: match.index + match[0].length },
+    effects: EditorView.scrollIntoView(match.index, { y: "center" })
+  });
+}
+
 function renderSmtSlice() {
   if (!smtSections || !smtEditor) return;
   const choice = smtObligationSelect.value;
@@ -1336,7 +1386,13 @@ function renderSmtSlice() {
   }
 }
 
-smtObligationSelect.addEventListener("change", renderSmtSlice);
+smtObligationSelect.addEventListener("change", () => {
+  renderSmtSlice();
+  const choice = smtObligationSelect.value;
+  if (choice !== "preamble" && choice !== "all" && smtSections?.obligations[Number(choice)]) {
+    jumpEditorToObligation(smtSections.obligations[Number(choice)].name);
+  }
+});
 
 async function renderSmtTranscript() {
   if (!smtDirty) return;
@@ -1355,7 +1411,8 @@ async function renderSmtTranscript() {
     for (const [index, obligation] of smtSections.obligations.entries()) {
       const option = document.createElement("option");
       option.value = String(index);
-      option.textContent = obligation.name;
+      option.textContent = obligationLabel(obligation.name);
+      option.title = obligation.name;
       smtObligationSelect.append(option);
     }
     if (smtSections.preamble.length > 0) {
@@ -1369,7 +1426,9 @@ async function renderSmtTranscript() {
     allOption.textContent = "everything (" + smtSections.totalExchanges + " exchanges)";
     smtObligationSelect.append(allOption);
     smtObligationSelect.hidden = false;
-    smtObligationSelect.value = smtSections.obligations.length > 0 ? "0" : "all";
+    const cursorIndex = obligationIndexForCursor();
+    smtObligationSelect.value = cursorIndex != null ? String(cursorIndex)
+      : smtSections.obligations.length > 0 ? "0" : "all";
     if (!smtEditor) {
       smtOutput.textContent = "";
       smtEditor = new EditorView({
