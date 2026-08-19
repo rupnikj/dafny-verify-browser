@@ -49,7 +49,7 @@ Three pieces:
 1. **Dafny + Boogie on .NET browser-wasm, unmodified.**
    [`prototype/DafnyBrowser.csproj`](prototype/DafnyBrowser.csproj) references
    upstream `DafnyCore` directly. [`prototype/Program.cs`](prototype/Program.cs)
-   exposes `Parse` / `Verify` / `GetLastSmtTranscript` via `[JSExport]` and
+   exposes `Parse` / `Verify` / `CompileToJs` / `GetLastSmtTranscript` via `[JSExport]` and
    drives Dafny's internal pipeline (`ProgramParser.Parse` →
    `ProgramResolver.Resolve` → `BoogieGenerator.Translate` →
    `DafnyMain.BoogieOnce`), skipping the CLI and language-server layers.
@@ -66,11 +66,13 @@ Three pieces:
    of SMT-LIB itself, which is why results match native Dafny exactly — the
    test harness even hashes the SMT transcript per file to detect drift.
 
-Upstream changes amount to a **58-line patch**
+Upstream changes amount to a **77-line patch**
 ([`patches/dafny-browser-compat.patch`](patches/dafny-browser-compat.patch)):
 use the default task scheduler on browser (WASM cannot create
 custom-stack threads), avoid `Console.In` and dynamic prover-assembly loading
-when building default options, and make the Java runtime JAR build skippable.
+when building default options, make the Java runtime JAR build skippable, and
+fall back to assembly metadata for the version stamp (WebCIL assemblies have
+no `Location` for `FileVersionInfo`).
 Everything else — embedding `DafnyPrelude.bpl` as a resource, instantiating
 the SMTLib factory directly, silent structured output — lives in this repo's
 wrapper project.
@@ -163,7 +165,7 @@ dev server here) it does nothing.
 Alongside the hosted demo, two fully self-contained HTML files can be built
 (both zero-network, no install, work from `file://`):
 
-- **`dafny-verify.html`** (`tools/make-dafny-verify-html.mjs`, ~16.4 MB) —
+- **`dafny-verify.html`** (`tools/make-dafny-verify-html.mjs`, ~16 MB) —
   the **complete demo experience** in one file: CodeMirror editor,
   diagnostics with counterexample traces and in-editor value annotations,
   all canned examples, the interactive tutorial, and the Run feature
@@ -275,12 +277,11 @@ fail next to a `solutions/` subdirectory expected to verify, hashing each
 file's SMT transcript so encoding drift shows up as a diff.
 
 **Fidelity:** measured differentially against a native `DafnyDriver` built
-from the same pinned commit, over 1,311 single-file programs from the
-official Dafny integration test suite: **100% verdict agreement, 97.1%
-exact** (identical counts and error lines), with ~1% infrastructure
-limitations (hangs where cancellation is missing, a few WASM stack-limit
-crashes). Full methodology, the two option-fidelity bugs the campaign found
-and fixed, and the limitations list:
+from the same pinned commit (matched Z3 4.16.0 on both sides), over 1,298
+comparable single-file programs from the official Dafny integration test
+suite: **99.5% verdict agreement, 96.6% exact** (identical counts and error
+lines), with ~0.8% infrastructure limitations. Full methodology, the three
+option-fidelity bugs the campaign found and fixed, and the limitations list:
 [`docs/differential-fidelity.md`](docs/differential-fidelity.md).
 
 ## Repository layout
@@ -293,7 +294,7 @@ prototype/            The wrapper project: C# entry points, JS runtime, demo pag
   wwwroot/            Demo page, verification worker, coi-serviceworker
   test/               Node-based integration tests + generic corpus harness
   NativeHarness/      Native reference pipeline (transcripts in logs/)
-patches/              58-line browser-compat patch against pinned Dafny
+patches/              77-line browser-compat patch against pinned Dafny
 docs/investigation.md Full write-up: source map, blockers, findings
 ```
 
