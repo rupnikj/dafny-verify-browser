@@ -251,7 +251,24 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\nmethod Broken() ensures false {}");
   await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
-  console.log("  run/JS/copy, SMT transcript, share permalink, live mode: all verified");
+  // Theme: the setting overrides the system scheme, restyles the editor,
+  // and persists across a reload.
+  await page.click("#settings-menu-button");
+  await page.selectOption("#theme-select", "light");
+  const themed = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    editor: getComputedStyle(document.querySelector("#editor .cm-editor")).backgroundColor
+  }));
+  if (themed.theme !== "light" || themed.editor !== "rgb(255, 255, 255)") {
+    throw new Error("light theme not applied: " + JSON.stringify(themed));
+  }
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const persisted = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (persisted !== "light") {
+    throw new Error("theme did not persist across reload: " + persisted);
+  }
+  await page.evaluate(() => localStorage.removeItem("dafny-verify-theme"));
+  console.log("  run/JS/copy, SMT, share, live, theme: all verified");
 }, { retries: 1 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero

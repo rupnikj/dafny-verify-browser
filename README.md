@@ -16,8 +16,10 @@ verifies, compiles to JavaScript, and executes `Main` right on the page.
 Also aboard: **Share** links that carry the program in the URL fragment
 (never sent to a server — it verifies live in the recipient's browser),
 a **Live** mode that re-verifies as you type, a **JS** tab showing what
-the verified program compiles to, and an **SMT** tab with the actual
-SMT-LIB conversation between Boogie and Z3.
+the verified program compiles to, an **SMT** tab with the actual
+SMT-LIB conversation between Boogie and Z3 (with a purpose-built SMT-LIB
+syntax mode), and light/dark **themes** following the system preference,
+overridable in settings.
 
 The first load downloads the whole verifier (~95 MB raw — a .NET runtime, 223
 managed assemblies, and a 33 MB Z3), so give it a moment; subsequent visits

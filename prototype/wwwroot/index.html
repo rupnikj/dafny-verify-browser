@@ -15,6 +15,15 @@
          them so Z3's threaded WASM build gets SharedArrayBuffer. It no-ops on
          hosts that already serve the headers, and reloads once on first visit. -->
     <script src="./coi-serviceworker.js"></script>
+    <script>
+    (() => {
+      let stored = null;
+      try { stored = localStorage.getItem("dafny-verify-theme"); } catch {}
+      const dark = stored === "dark" ||
+        (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+    </script>
     <link rel="stylesheet" href="./app.css">
   </head>
   <body>
@@ -99,6 +108,16 @@
               <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5h6M13 4.5h1"/><circle cx="10.5" cy="4.5" r="1.7"/><path d="M2 11.5h1M8 11.5h6"/><circle cx="5.5" cy="11.5" r="1.7"/></svg>
             </button>
             <div class="dropdown dropdown-right" id="settings-menu" hidden>
+              <div class="menu-head">Appearance</div>
+              <label class="menu-row">
+                <span>Theme</span>
+                <select id="theme-select">
+                  <option value="system" selected>System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <div class="menu-sep"></div>
               <div class="menu-head">Verification</div>
               <label class="menu-row" title="Per-obligation solver time limit (like dafny verify --verification-time-limit)">
                 <span>Time limit</span>

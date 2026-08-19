@@ -1,4 +1,4 @@
-import { EditorState, RangeSet, StateEffect, StateField } from "@codemirror/state";
+import { Compartment, EditorState, RangeSet, StateEffect, StateField } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -31,7 +31,6 @@ import {
 } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
 import { javascript } from "@codemirror/legacy-modes/mode/javascript";
-import { scheme } from "@codemirror/legacy-modes/mode/scheme";
 import { tags } from "@lezer/highlight";
 import { createDafny } from "./dafny-browser.js";
 import { runCompiled } from "./dafny-runner.js";
@@ -290,29 +289,31 @@ const dafnyLanguage = StreamLanguage.define({
   }
 });
 
+// Colors come from the --syn-* CSS tokens, so the one style follows the
+// page theme; only CodeMirror's dark flag needs a live swap (compartments).
 const dafnyHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#d98cff", fontWeight: "600" },
-  { tag: [tags.typeName, tags.className], color: "#55d6be" },
-  { tag: tags.definition(tags.variableName), color: "#7fc4ff" },
-  { tag: tags.variableName, color: "#cdd6e0" },
-  { tag: [tags.bool, tags.null], color: "#f0a96b" },
-  { tag: tags.number, color: "#b7dc8b" },
-  { tag: tags.string, color: "#d5bd79" },
-  { tag: tags.comment, color: "#687687", fontStyle: "italic" },
-  { tag: tags.meta, color: "#e6a75a" },
-  { tag: tags.operator, color: "#8dc9ff" },
-  { tag: tags.punctuation, color: "#9ca8b7" }
+  { tag: tags.keyword, color: "var(--syn-keyword)", fontWeight: "600" },
+  { tag: [tags.typeName, tags.className], color: "var(--syn-type)" },
+  { tag: tags.definition(tags.variableName), color: "var(--syn-def)" },
+  { tag: tags.variableName, color: "var(--syn-var)" },
+  { tag: [tags.bool, tags.null], color: "var(--syn-atom)" },
+  { tag: tags.number, color: "var(--syn-number)" },
+  { tag: tags.string, color: "var(--syn-string)" },
+  { tag: tags.comment, color: "var(--syn-comment)", fontStyle: "italic" },
+  { tag: tags.meta, color: "var(--syn-meta)" },
+  { tag: tags.operator, color: "var(--syn-operator)" },
+  { tag: tags.punctuation, color: "var(--syn-punct)" }
 ]);
 
-const editorTheme = EditorView.theme({
+const makeEditorTheme = dark => EditorView.theme({
   "&": {
     height: "100%",
-    color: "#d8dee9",
-    backgroundColor: "#151a21"
+    color: "var(--text)",
+    backgroundColor: "var(--editor-bg)"
   },
   ".cm-content": {
     padding: "14px 0 60px",
-    caretColor: "#72bdff",
+    caretColor: "var(--ed-caret)",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     fontSize: "13px",
     lineHeight: "1.58"
@@ -321,17 +322,17 @@ const editorTheme = EditorView.theme({
     padding: "0 12px 0 8px"
   },
   ".cm-cursor, .cm-dropCursor": {
-    borderLeftColor: "#72bdff"
+    borderLeftColor: "var(--ed-caret)"
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-    backgroundColor: "#234b6f !important"
+    backgroundColor: "var(--ed-selection) !important"
   },
   ".cm-activeLine": {
-    backgroundColor: "rgba(255, 255, 255, .027)"
+    backgroundColor: "var(--ed-activeline)"
   },
   ".cm-gutters": {
-    color: "#5e6978",
-    backgroundColor: "#151a21",
+    color: "var(--ed-gutter)",
+    backgroundColor: "var(--editor-bg)",
     border: "none",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     fontSize: "12px"
@@ -341,29 +342,83 @@ const editorTheme = EditorView.theme({
     padding: "0 8px 0 6px"
   },
   ".cm-activeLineGutter": {
-    color: "#bbc5d0",
-    backgroundColor: "rgba(255, 255, 255, .027)"
+    color: "var(--ed-gutter-active)",
+    backgroundColor: "var(--ed-activeline)"
   },
   ".cm-panels": {
-    color: "#d8dee9",
-    backgroundColor: "#1d2430"
+    color: "var(--text)",
+    backgroundColor: "var(--surface-2)"
   },
   ".cm-search": {
-    borderTop: "1px solid #303946 !important"
+    borderTop: "1px solid var(--border) !important"
   },
   ".cm-search input, .cm-search button, .cm-search label": {
-    color: "#d8dee9"
+    color: "var(--text)"
   },
   ".cm-search input": {
-    backgroundColor: "#11151b",
-    border: "1px solid #3b4655"
+    backgroundColor: "var(--surface-0)",
+    border: "1px solid var(--border-strong)"
   },
   ".cm-tooltip": {
-    color: "#d8dee9",
-    backgroundColor: "#242c38",
-    border: "1px solid #465263"
+    color: "var(--text)",
+    backgroundColor: "var(--ed-tooltip-bg)",
+    border: "1px solid var(--ed-tooltip-border)"
   }
-}, { dark: true });
+}, { dark });
+
+// ---------- Theme (System / Light / Dark) ----------
+// A head script resolved the initial data-theme before first paint; this
+// section owns the setting, the system-preference listener, and swapping
+// CodeMirror's dark flag on every live editor via compartments.
+const THEME_KEY = "dafny-verify-theme";
+const darkSchemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+const themedEditors = [];
+
+function isDarkNow() {
+  return document.documentElement.dataset.theme !== "light";
+}
+
+// Returns the compartment-wrapped theme extension and registers the editor
+// (resolved lazily — the JS/SMT panes are created on demand).
+function themedEditorExtension(getView) {
+  const compartment = new Compartment();
+  themedEditors.push({ compartment, getView });
+  return compartment.of(makeEditorTheme(isDarkNow()));
+}
+
+function themeSetting() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === "light" || stored === "dark" ? stored : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function applyTheme() {
+  const setting = themeSetting();
+  const dark = setting === "dark" || (setting === "system" && darkSchemeQuery.matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  for (const { compartment, getView } of themedEditors) {
+    getView()?.dispatch({ effects: compartment.reconfigure(makeEditorTheme(dark)) });
+  }
+}
+
+const themeSelect = document.querySelector("#theme-select");
+themeSelect.value = themeSetting();
+themeSelect.addEventListener("change", () => {
+  try {
+    if (themeSelect.value === "system") {
+      localStorage.removeItem(THEME_KEY);
+    } else {
+      localStorage.setItem(THEME_KEY, themeSelect.value);
+    }
+  } catch {}
+  applyTheme();
+});
+darkSchemeQuery.addEventListener("change", () => {
+  if (themeSetting() === "system") applyTheme();
+});
 
 const setDiagnosticsEffect = StateEffect.define();
 
@@ -789,7 +844,7 @@ editor = new EditorView({
       search({ top: true }),
       dafnyLanguage,
       syntaxHighlighting(dafnyHighlight),
-      editorTheme,
+      themedEditorExtension(() => editor),
       diagnosticField,
       counterexampleGhostField,
       diagnosticHover,
@@ -948,7 +1003,79 @@ document.querySelector("#examples-menu").addEventListener("click", event => {
 // input: name} markers and {kind: "exchange", input: script, output:
 // response} pairs; responses become comments so the text stays one valid
 // SMT-LIB document for the scheme highlighter.
-const smtLanguage = StreamLanguage.define(scheme);
+// A real SMT-LIB mode (the generic scheme mode only knows comments/strings/
+// numbers, leaving the actual vocabulary monochrome). Head position matters:
+// the first symbol after "(" is a command, binder, or builtin application.
+const SMT_COMMANDS = new Set(["assert", "check-sat", "check-sat-assuming",
+  "declare-const", "declare-datatype", "declare-datatypes", "declare-fun",
+  "declare-sort", "define-const", "define-fun", "define-fun-rec",
+  "define-sort", "echo", "exit", "get-assertions", "get-assignment",
+  "get-info", "get-model", "get-option", "get-proof", "get-unsat-core",
+  "get-value", "labels", "eval", "pop", "push", "reset", "reset-assertions",
+  "set-info", "set-logic", "set-option"]);
+const SMT_DECLARES = new Set(["declare-const", "declare-datatype",
+  "declare-fun", "declare-sort", "define-const", "define-fun",
+  "define-fun-rec", "define-sort"]);
+const SMT_BINDERS = new Set(["forall", "exists", "let", "lambda", "match", "!", "as", "par"]);
+const SMT_BUILTINS = new Set(["and", "or", "not", "=>", "=", "distinct",
+  "ite", "xor", "implies", "+", "-", "*", "/", "div", "mod", "abs",
+  "<=", "<", ">=", ">", "select", "store", "concat", "to_int", "to_real"]);
+const SMT_SORTS = new Set(["Bool", "Int", "Real", "String", "Array",
+  "BitVec", "RoundingMode", "Float32", "Float64", "Seq", "RegEx"]);
+
+const smtLanguage = StreamLanguage.define({
+  name: "smtlib",
+  startState: () => ({ head: false, defNext: false }),
+  token(stream, state) {
+    if (stream.eatSpace()) return null;
+    if (stream.match(";")) {
+      stream.skipToEnd();
+      return "comment";
+    }
+    if (stream.match(/^"(?:[^"]|"")*"?/)) return "string";
+    if (stream.match(/^#[xb][0-9a-fA-F]+/)) return "number";
+    if (stream.match(/^-?\d+(?:\.\d+)?/)) return "number";
+    if (stream.match(/^:[\w.$@%^&*_\-+=<>/?!~]+/)) return "meta";
+    if (stream.match(/^\|[^|]*\|/)) {
+      state.head = false;
+      return "typeName";
+    }
+    const ch = stream.peek();
+    if (ch === "(") {
+      stream.next();
+      state.head = true;
+      return "punctuation";
+    }
+    if (ch === ")") {
+      stream.next();
+      state.head = false;
+      return "punctuation";
+    }
+    if (stream.match(/^[\w.$@%^&*_\-+=<>/?!~']+/)) {
+      const word = stream.current();
+      const wasHead = state.head;
+      state.head = false;
+      if (wasHead) {
+        if (SMT_COMMANDS.has(word)) {
+          state.defNext = SMT_DECLARES.has(word);
+          return "keyword";
+        }
+        if (SMT_BINDERS.has(word)) return "keyword";
+        if (SMT_BUILTINS.has(word)) return "operator";
+        return "variableName";
+      }
+      if (word === "true" || word === "false") return "bool";
+      if (SMT_SORTS.has(word)) return "typeName";
+      if (state.defNext) {
+        state.defNext = false;
+        return "def";
+      }
+      return "variableName";
+    }
+    stream.next();
+    return null;
+  }
+});
 const SMT_RENDER_LIMIT = 4 * 1024 * 1024;
 let smtEditor = null;
 let smtDirty = false;
@@ -996,7 +1123,7 @@ async function renderSmtTranscript() {
             search({ top: true }),
             smtLanguage,
             syntaxHighlighting(dafnyHighlight),
-            editorTheme,
+            themedEditorExtension(() => smtEditor),
             EditorState.readOnly.of(true),
             keymap.of([...defaultKeymap, ...searchKeymap])
           ]
@@ -1510,7 +1637,7 @@ function showCompiledJs(compiled) {
           search({ top: true }),
           jsLanguage,
           syntaxHighlighting(dafnyHighlight),
-          editorTheme,
+          themedEditorExtension(() => jsEditor),
           EditorState.readOnly.of(true),
           keymap.of([...defaultKeymap, ...searchKeymap])
         ]
