@@ -36,7 +36,7 @@ await writeFile(appEntry, appSource);
 let appBundle;
 try {
   appBundle = execFileSync(resolve(prototypeRoot, "node_modules/.bin/esbuild"), [
-    appEntry, "--bundle", "--minify", "--format=esm", "--target=es2022"
+    appEntry, "--bundle", "--minify", "--format=esm", "--target=es2022", "--legal-comments=none"
   ], { maxBuffer: 1 << 28 }).toString("utf8");
 } finally {
   await unlink(appEntry);
@@ -47,8 +47,8 @@ try {
 // decoded at boot by the ui-boot script below. Keeps the file inside the
 // 16 MiB artifact-hosting limit that the raw texts blew past. ---
 const tutorialJson = await readFile(resolve(prototypeRoot, "wwwroot/tutorial.json"), "utf8");
-const bignumberSource = await readFile(
-  resolve(prototypeRoot, "node_modules/bignumber.js/dist/bignumber.js"), "utf8");
+const bignumberSource = minify(await readFile(
+  resolve(prototypeRoot, "node_modules/bignumber.js/dist/bignumber.js"), "utf8"));
 const appCss = minify(await readFile(resolve(prototypeRoot, "src/app.css"), "utf8"), "css");
 
 // --- page: the real demo page, network references replaced with inline ---
@@ -152,5 +152,10 @@ console.log(`dafny-verify.html: ${(htmlBytes / 1048576).toFixed(2)} MiB ` +
   `(framework ${fileCount} files ${(rawBytes / 1048576).toFixed(1)} MB raw; ` +
   `ui payload ${(uiPayload.length / 1024).toFixed(0)} KB br ` +
   `from app ${(appBundle.length / 1024).toFixed(0)} KB + tutorial ${(tutorialJson.length / 1024).toFixed(0)} KB + bignumber + css)`);
-// Artifact hosting accepted 17 MB in practice (measured 2026-08-19); treat
-// ~16 MiB as a soft budget so growth stays visible, not as a hard gate.
+// The artifact publish path enforces 16 MiB (measured 2026-08-19: a build
+// 47 bytes over was rejected). Warn loudly near the line.
+if (htmlBytes >= 16 * 1048576) {
+  console.warn(`WARNING: ${htmlBytes} bytes exceeds the 16 MiB artifact publish limit`);
+} else if (htmlBytes >= 15.9 * 1048576) {
+  console.warn(`note: ${(16 * 1048576 - htmlBytes) / 1024 | 0} KB of headroom left under the 16 MiB artifact limit`);
+}
