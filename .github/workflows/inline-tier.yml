@@ -75,6 +75,10 @@ jobs:
         working-directory: prototype
         run: Z3_ST_DIR="$GITHUB_WORKSPACE/z3-st-dist" node tools/make-dafny-artifact.mjs
 
+      - name: Assemble full-UI single file (dafny-verify.html)
+        working-directory: prototype
+        run: Z3_ST_DIR="$GITHUB_WORKSPACE/z3-st-dist" node tools/make-dafny-verify-html.mjs
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -91,9 +95,11 @@ jobs:
           Z3_ST_DIR: ${{ github.workspace }}/z3-st-dist
         run: npm run test:browser
 
-      - name: Upload the single-file verifier
+      - name: Upload the single-file verifiers
         uses: actions/upload-artifact@v4
         with:
-          name: dafny-artifact
-          path: prototype/dist/dafny-artifact.html
+          name: dafny-single-file
+          path: |
+            prototype/dist/dafny-artifact.html
+            prototype/dist/dafny-verify.html
           if-no-files-found: error

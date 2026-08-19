@@ -30,6 +30,13 @@ if (withArtifact) {
 } else {
   console.log("note: dist/dafny-artifact.html not built — skipping the artifact gate");
 }
+const singleFileSource = resolve(prototypeRoot, "dist/dafny-verify.html");
+const withSingleFile = await exists(singleFileSource);
+if (withSingleFile) {
+  await copyFile(singleFileSource, resolve(prototypeRoot, "dist/wwwroot/dafny-verify.html"));
+} else {
+  console.log("note: dist/dafny-verify.html not built — skipping the single-file gate");
+}
 
 const server = spawn(process.execPath, [resolve(prototypeRoot, "server.mjs")], {
   env: { ...process.env, PORT: String(port) },
@@ -197,6 +204,30 @@ if (withArtifact) {
       () => globalThis.__dafnyTransport?.openSessionCount);
     if (openSessions !== undefined && openSessions !== 0) {
       throw new Error("leaked solver sessions after verifications: " + openSessions);
+    }
+  });
+}
+
+// Full-UI single file: boots without any network fetch, full demo flow.
+if (withSingleFile) {
+  await gate("single-file: full demo UI boots and verifies (dafny-verify.html)", async page => {
+    const requests = [];
+    page.on("request", request => {
+      const url = request.url();
+      if (!url.startsWith("data:") && !url.includes("dafny-verify.html")) requests.push(url);
+    });
+    await page.goto(base + "/dafny-verify.html", { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(
+      () => document.querySelector("#runtime-label")?.textContent === "Verifier ready",
+      undefined, { timeout: BOOT_TIMEOUT });
+    await page.selectOption("#example", "bad");
+    await page.click("#verify");
+    await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
+    await page.waitForSelector(".cex-constraint", { timeout: 30000 });
+    await page.click("#tutorial-toggle");
+    await page.waitForSelector(".tutorial-code", { timeout: 30000 });
+    if (requests.length) {
+      throw new Error("unexpected network requests: " + requests.slice(0, 5).join(", "));
     }
   });
 }

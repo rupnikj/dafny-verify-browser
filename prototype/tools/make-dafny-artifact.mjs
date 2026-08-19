@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants } from "node:zlib";
 import { buildFrameworkBundle } from "./bundle-lib.mjs";
+import { brotli, encodeBase85, BASE85_CHARSET, BASE85_DECODER_JS, minify as sharedMinify, brotliDecoderScript } from "./inline-lib.mjs";
 
 const SOFT_TIMEOUT_MS = 30000;
 const BUDGET_BYTES = 16 * 1024 * 1024; // claude.ai artifact publish limit
@@ -19,13 +20,6 @@ const frameworkRoot = resolve(prototypeRoot, "dist/wwwroot/_framework");
 const z3StDir = resolve(process.env.Z3_ST_DIR ?? resolve(prototypeRoot, "../../../z3-inline/dist"));
 const outPath = resolve(prototypeRoot, "dist/dafny-artifact.html");
 
-const brotli = bytes => brotliCompressSync(bytes, {
-  params: {
-    [constants.BROTLI_PARAM_QUALITY]: 11,
-    [constants.BROTLI_PARAM_LGWIN]: 24,
-    [constants.BROTLI_PARAM_SIZE_HINT]: bytes.byteLength
-  }
-});
 
 // Sandbox finding: in srcdoc-rendered artifacts no URL of any scheme loads
 // (blob:, data:, and <script src> are all blocked), but INJECTED inline
@@ -45,97 +39,7 @@ const frameworkBr = brotli(bundle);
 // '{' is also excluded: hosting-side validators pattern-match template
 // machinery ("{{...") in page content, and 15 MB of dense text otherwise
 // contains every two-character sequence thousands of times.
-const BASE85_CHARSET = (() => {
-  const chars = [];
-  for (let code = 33; code <= 126 && chars.length < 85; code++) {
-    if ("<>&\"'\\`{".includes(String.fromCharCode(code))) continue;
-    chars.push(String.fromCharCode(code));
-  }
-  return chars.join("");
-})();
-
-// Characters outside the base64 alphabet: sequences of these are what
-// distinguish base85 text from the JS/base64 content that hosting-side
-// validators demonstrably accept. Breaking every adjacent pair with a
-// newline (the decoder skips whitespace) makes multi-punctuation sigils
-// impossible while costing ~5% size.
-const EXOTIC = new Set("!#$%()*,-.:;?@[]^_|~".split(""));
-
-function breakExoticPairs(text) {
-  let out = "";
-  let last = "";
-  for (const ch of text) {
-    if (EXOTIC.has(ch) && EXOTIC.has(last)) {
-      out += "\n";
-    }
-    out += ch;
-    last = ch;
-  }
-  return out;
-}
-
-function encodeBase85(bytes) {
-  const out = [];
-  for (let i = 0; i < bytes.length; i += 4) {
-    const chunk = [bytes[i], bytes[i + 1] ?? 0, bytes[i + 2] ?? 0, bytes[i + 3] ?? 0];
-    let value = ((chunk[0] * 256 + chunk[1]) * 256 + chunk[2]) * 256 + chunk[3];
-    const digits = new Array(5);
-    for (let d = 4; d >= 0; d--) {
-      digits[d] = BASE85_CHARSET[value % 85];
-      value = Math.floor(value / 85);
-    }
-    out.push(digits.join(""));
-  }
-  const padding = (4 - (bytes.length % 4)) % 4;
-  let text = out.join("");
-  if (padding) {
-    text = text.slice(0, text.length - padding);
-  }
-  return breakExoticPairs(text);
-}
-
-// The inline decoder the template embeds (kept in sync with the encoder).
-// Characters outside the charset (the sigil-breaking newlines) are skipped.
-const BASE85_DECODER_JS = `
-function decodeBase85(elementId) {
-  const CHARSET = ${JSON.stringify(BASE85_CHARSET)};
-  const lookup = new Int16Array(127).fill(-1);
-  for (let i = 0; i < 85; i++) lookup[CHARSET.charCodeAt(i)] = i;
-  const text = document.getElementById(elementId).textContent;
-  const bytes = new Uint8Array(Math.ceil(text.length / 5) * 4 + 4);
-  let bi = 0, value = 0, digits = 0, valid = 0;
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    const digit = code < 127 ? lookup[code] : -1;
-    if (digit < 0) continue;
-    valid++;
-    value = value * 85 + digit;
-    if (++digits === 5) {
-      bytes[bi++] = (value / 16777216) & 255;
-      bytes[bi++] = (value >>> 16) & 255;
-      bytes[bi++] = (value >>> 8) & 255;
-      bytes[bi++] = value & 255;
-      value = 0; digits = 0;
-    }
-  }
-  const padding = digits === 0 ? 0 : 5 - digits;
-  if (digits > 0) {
-    for (let d = digits; d < 5; d++) value = value * 85 + 84;
-    bytes[bi++] = (value / 16777216) & 255;
-    bytes[bi++] = (value >>> 16) & 255;
-    bytes[bi++] = (value >>> 8) & 255;
-    bytes[bi++] = value & 255;
-  }
-  return bytes.subarray(0, bi - padding);
-}`;
-
-// Minify the inlined plain-text scripts (glue, decoder, transports): they
-// ship uncompressed inside the HTML, so every byte is a byte of budget.
-function minify(source, format = "iife") {
-  return execFileSync(resolve(prototypeRoot, "node_modules/.bin/esbuild"), [
-    "--minify", `--format=${format}`
-  ], { input: source, maxBuffer: 1 << 26 }).toString("utf8");
-}
+const minify = sharedMinify;
 
 // The global export must be assigned INSIDE the minified scope: esbuild's
 // iife output wraps top-level vars, so an outside reference would see nothing.
@@ -155,10 +59,7 @@ const transport = minify(
   "\nconst createZ3ApiTransport = globalThis.createZ3ApiTransport;";
 
 // Bundle the pure-JS brotli decoder (dev dependency) into a self-contained IIFE.
-const decoder = execFileSync(resolve(prototypeRoot, "node_modules/.bin/esbuild"), [
-  "--bundle", "--minify", "--format=iife", "--global-name=__brotliDecode",
-  resolve(prototypeRoot, "node_modules/brotli/decompress.js")
-], { maxBuffer: 1 << 26 }).toString("utf8");
+const decoder = brotliDecoderScript();
 
 const template = await readFile(resolve(prototypeRoot, "tools/dafny-artifact-template.html"), "utf8");
 const replacements = new Map([

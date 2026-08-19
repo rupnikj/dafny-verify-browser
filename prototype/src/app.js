@@ -793,7 +793,11 @@ async function ensureTutorialLoaded() {
   if (tutorialData || tutorialLoading) return;
   tutorialLoading = true;
   try {
-    tutorialData = await (await fetch("./tutorial.json")).json();
+    // The single-file build inlines the tutorial (fetch fails on file://).
+    const inlineData = document.querySelector("#tutorial-data");
+    tutorialData = inlineData
+      ? JSON.parse(inlineData.textContent)
+      : await (await fetch("./tutorial.json")).json();
     const chapterSelect = document.querySelector("#tutorial-chapter");
     chapterSelect.replaceChildren(...tutorialData.chapters.map((chapter, index) => {
       const option = document.createElement("option");

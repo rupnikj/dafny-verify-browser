@@ -132,12 +132,26 @@ service worker that injects the headers on every response and reloads the page
 once on first visit. On hosts that already send the headers (like the local
 dev server here) it does nothing.
 
-## The inline tier: a single-file verifier
+## The inline tier: single-file verifiers
 
-Alongside the hosted demo, `tools/make-dafny-artifact.mjs` assembles the whole
-verifier into **one ~16 MB self-contained HTML file** — every assembly,
-the .NET runtime, a single-threaded Z3, and a minimal UI, brotli-compressed
-and base64-inlined. It runs with **zero network requests, no workers, no
+Alongside the hosted demo, two fully self-contained HTML files can be built
+(both zero-network, no install, work from `file://`):
+
+- **`dafny-verify.html`** (`tools/make-dafny-verify-html.mjs`, ~16.4 MB) —
+  the **complete demo experience** in one file: CodeMirror editor,
+  diagnostics with counterexample traces and in-editor value annotations,
+  all canned examples, and the interactive tutorial. Verification runs on
+  the page thread (the UI freezes until the verdict; the per-obligation
+  time limit bounds it).
+- **`dafny-artifact.html`** (`tools/make-dafny-artifact.mjs`, ~15.8 MB) — a
+  minimal textarea UI, kept small enough for hosting environments with
+  strict page-size limits and hardened for the harshest sandboxes.
+
+Both are built and uploaded by the [inline-tier
+workflow](.github/workflows/inline-tier.yml) as the `dafny-single-file`
+artifact. Under the hood, `tools/make-dafny-artifact.mjs` assembles
+every assembly, the .NET runtime, and a single-threaded Z3,
+brotli-compressed and base85-inlined. It runs with **zero network requests, no workers, no
 `SharedArrayBuffer`, and no COOP/COEP headers**, which means it works in
 hostile sandboxes (restrictive-CSP iframes such as claude.ai artifacts) and
 anywhere else a lone HTML file can be opened. The hosted threaded tier stays
