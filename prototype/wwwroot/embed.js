@@ -83,6 +83,7 @@ function ensureDafny() {
   });
   return dafnyPromise;
 }
+verifyButton.disabled = false;
 verifyButton.addEventListener("click", async () => {
   verifyButton.disabled = true;
   verdict.textContent = "";

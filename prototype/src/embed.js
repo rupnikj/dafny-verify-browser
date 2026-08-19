@@ -57,6 +57,10 @@ function ensureDafny() {
   return dafnyPromise;
 }
 
+// Enabled only once this module is wired up — the static button would
+// otherwise swallow clicks that arrive before the script loads.
+verifyButton.disabled = false;
+
 verifyButton.addEventListener("click", async () => {
   verifyButton.disabled = true;
   verdict.textContent = "";
