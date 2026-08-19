@@ -8,18 +8,19 @@ import { fileURLToPath } from "node:url";
 
 const prototypeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export const brotli = bytes => brotliCompressSync(bytes, {
+export const brotli = (bytes, { text = false } = {}) => brotliCompressSync(bytes, {
   params: {
     [constants.BROTLI_PARAM_QUALITY]: 11,
     [constants.BROTLI_PARAM_LGWIN]: 24,
+    [constants.BROTLI_PARAM_MODE]: text ? constants.BROTLI_MODE_TEXT : constants.BROTLI_MODE_GENERIC,
     [constants.BROTLI_PARAM_SIZE_HINT]: bytes.byteLength
   }
 });
 
 export function minify(source, format = "iife") {
-  return execFileSync(resolve(prototypeRoot, "node_modules/.bin/esbuild"), [
-    "--minify", `--format=${format}`
-  ], { input: source, maxBuffer: 1 << 26 }).toString("utf8");
+  const args = format === "css" ? ["--minify", "--loader=css"] : ["--minify", `--format=${format}`];
+  return execFileSync(resolve(prototypeRoot, "node_modules/.bin/esbuild"),
+    args, { input: source, maxBuffer: 1 << 26 }).toString("utf8");
 }
 
 export function brotliDecoderScript() {

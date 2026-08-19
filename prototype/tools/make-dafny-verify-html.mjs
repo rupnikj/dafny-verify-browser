@@ -42,33 +42,34 @@ try {
   await unlink(appEntry);
 }
 
-// --- tutorial, inlined (fetch is unavailable on file://) ---
-const tutorialJson = (await readFile(resolve(prototypeRoot, "wwwroot/tutorial.json"), "utf8"))
-  .replaceAll("</", "<\\/"); // JSON-legal, HTML-safe
-
-// --- bignumber.js: the Dafny→JS runtime's one dependency, inlined so the
-// Run feature works on file:// (the app reads #bignumber-src via textContent,
-// so the text must be embedded verbatim — assert it needs no escaping) ---
+// --- UI payload: app bundle, tutorial, bignumber, CSS — one brotli+base85
+// payload (a shared compression window beats compressing them separately),
+// decoded at boot by the ui-boot script below. Keeps the file inside the
+// 16 MiB artifact-hosting limit that the raw texts blew past. ---
+const tutorialJson = await readFile(resolve(prototypeRoot, "wwwroot/tutorial.json"), "utf8");
 const bignumberSource = await readFile(
   resolve(prototypeRoot, "node_modules/bignumber.js/dist/bignumber.js"), "utf8");
-if (bignumberSource.includes("</") || bignumberSource.includes("<!--")) {
-  throw new Error("bignumber.js contains HTML-unsafe sequences; switch #bignumber-src to base64");
-}
-
-const appCss = await readFile(resolve(prototypeRoot, "src/app.css"), "utf8");
+const appCss = minify(await readFile(resolve(prototypeRoot, "src/app.css"), "utf8"), "css");
 
 // --- page: the real demo page, network references replaced with inline ---
 let html = await readFile(resolve(prototypeRoot, "wwwroot/index.html"), "utf8");
 const scrub = [
   [/\n\s*<!-- GitHub Pages cannot send COOP\/COEP headers[\s\S]*?<script src="\.\/coi-serviceworker\.js"><\/script>/, ""],
-  [/<link rel="stylesheet" href="\.\/app\.css">/, "<style>\n" + appCss.replaceAll("</", "<\\/") + "\n</style>"],
-  [/<title>[^<]*<\/title>/, "<title>Dafny Verify — single-file (no install, no network)</title>"]
+  [/<link rel="stylesheet" href="\.\/app\.css">/, ""], // injected by ui-boot from the payload
+  [/<title>[^<]*<\/title>/, "<title>Dafny Verify</title>"]
 ];
 for (const [pattern, replacement] of scrub) {
   if (!pattern.test(html)) throw new Error("page anchor missing: " + pattern);
   // Function form: replacement text must never be parsed for $-substitutions.
   html = html.replace(pattern, () => replacement);
 }
+// Minify the page markup (after the comment-anchored scrubs): comments carry
+// no runtime meaning, and no text node in this page leads a line, so leading
+// indentation is safely collapsible.
+html = html
+  .replace(/<!--[\s\S]*?-->/g, "")
+  .replace(/\n\s+</g, "\n<")
+  .replace(/\n{2,}/g, "\n");
 
 const prelude = minify(`
 globalThis.__dotnetInlineBase = "https://inline.invalid/_framework/dotnet.js";
@@ -87,22 +88,69 @@ globalThis.__inlineImport = name => {
 };
 ` + BASE85_DECODER_JS + "\nglobalThis.decodeBase85 = decodeBase85;");
 
+const uiPayload = brotli(Buffer.from(JSON.stringify({
+  z3: z3Glue, // only needed at solver start, well after decode — ride compressed
+  css: appCss,
+  tutorial: tutorialJson,
+  bignumber: bignumberSource,
+  app: appBundle
+})), { text: true });
+
+// Runs in <head>, synchronously after the payloads: styles land before the
+// body paints (no flash of unstyled content); the app module waits for the
+// DOM. Everything it injects came through base85 (HTML-safe charset), so no
+// </script>-escaping questions arise for the payload contents.
+const uiBoot = minify(`
+(() => {
+  const decode = typeof globalThis.__brotliDecode === "function"
+    ? globalThis.__brotliDecode : globalThis.__brotliDecode.default;
+  const ui = JSON.parse(new TextDecoder().decode(
+    new Uint8Array(decode(globalThis.decodeBase85("ui-b64")))));
+  (0, eval)(ui.z3); // indirect eval: global scope, same as the script tag it replaces
+  const style = document.createElement("style");
+  style.textContent = ui.css;
+  document.head.append(style);
+  for (const [id, type, text] of [
+    ["tutorial-data", "application/json", ui.tutorial],
+    ["bignumber-src", "text/plain", ui.bignumber]
+  ]) {
+    const holder = document.createElement("script");
+    holder.id = id;
+    holder.type = type;
+    holder.textContent = text;
+    document.head.append(holder);
+  }
+  const bootApp = () => {
+    const app = document.createElement("script");
+    app.type = "module";
+    app.textContent = ui.app;
+    document.body.append(app);
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootApp);
+  } else {
+    bootApp();
+  }
+})();
+`);
+
 const inlineBlocks = `
 <base href="https://inline.invalid/_framework/">
-<script>${z3Glue.replaceAll("</script", "<\\/script")}</script>
 <script>${brotliDecoderScript().replaceAll("</script", "<\\/script")}</script>
 <script>${prelude.replaceAll("</script", "<\\/script")}</script>
 <script type="text/plain" id="fw-b64">${encodeBase85(frameworkBr)}</script>
 <script type="text/plain" id="z3-b64">${encodeBase85(z3WasmBr)}</script>
-<script type="application/json" id="tutorial-data">${tutorialJson}</script>
-<script type="text/plain" id="bignumber-src">${bignumberSource}</script>
+<script type="text/plain" id="ui-b64">${encodeBase85(uiPayload)}</script>
+<script>${uiBoot.replaceAll("</script", "<\\/script")}</script>
 `;
 html = html.replace("</head>", () => inlineBlocks + "</head>");
-html = html.replace('<script type="module" src="./app.js"></script>',
-  () => '<script type="module">\n' + appBundle.replaceAll("</script", "<\\/script") + "\n</script>");
+html = html.replace('<script type="module" src="./app.js"></script>', () => "");
 
 const htmlBytes = Buffer.byteLength(html, "utf8");
 await writeFile(outPath, html);
-console.log(`dafny-verify.html: ${(htmlBytes / 1048576).toFixed(2)} MB ` +
+console.log(`dafny-verify.html: ${(htmlBytes / 1048576).toFixed(2)} MiB ` +
   `(framework ${fileCount} files ${(rawBytes / 1048576).toFixed(1)} MB raw; ` +
-  `app bundle ${(appBundle.length / 1024).toFixed(0)} KB; tutorial ${(tutorialJson.length / 1024).toFixed(0)} KB)`);
+  `ui payload ${(uiPayload.length / 1024).toFixed(0)} KB br ` +
+  `from app ${(appBundle.length / 1024).toFixed(0)} KB + tutorial ${(tutorialJson.length / 1024).toFixed(0)} KB + bignumber + css)`);
+// Artifact hosting accepted 17 MB in practice (measured 2026-08-19); treat
+// ~16 MiB as a soft budget so growth stays visible, not as a hard gate.
