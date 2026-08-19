@@ -847,7 +847,8 @@ body.tutorial-on .panel {
   line-height: 1.62;
 }
 
-.tutorial-prose { max-width: 68ch; color: var(--text-mild); }
+/* No width cap: the draggable divider is the reader's line-length control. */
+.tutorial-prose { color: var(--text-mild); }
 .tutorial-prose h1 { font-size: 18px; margin: 18px 0 8px; color: var(--text-bright); }
 .tutorial-prose h2 { font-size: 15px; margin: 18px 0 6px; color: var(--text-bright); }
 .tutorial-prose h3 { font-size: 13px; margin: 14px 0 5px; color: var(--text-bright); }
