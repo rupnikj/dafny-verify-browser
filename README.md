@@ -307,8 +307,11 @@ interruption, and deeply recursive proofs may need WASM stack tuning.
 
 ## Credits
 
-- The port was produced with OpenAI Codex; the investigation log in
+- The original port was produced with OpenAI Codex; the investigation log in
   [`docs/investigation.md`](docs/investigation.md) is its working record.
+  The demo, the differential fidelity campaign, counterexamples, the
+  tutorial revival, `dafny run`, and the single-file builds were built with
+  [Claude Code](https://claude.com/claude-code).
 - [Dafny](https://github.com/dafny-lang/dafny),
   [Boogie](https://github.com/boogie-org/boogie), and
   [Z3](https://github.com/Z3Prover/z3) do all the actual verification work.
