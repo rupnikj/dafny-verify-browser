@@ -252,6 +252,18 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (!smtText.includes("(check-sat)") || !smtText.includes("proof obligation")) {
     throw new Error("SMT transcript missing expected content (len " + smtText.length + ")");
   }
+  const obligationOptions = await page.locator("#smt-obligation option").count();
+  if (obligationOptions < 2) {
+    throw new Error("SMT obligation picker missing options: " + obligationOptions);
+  }
+  // Readable-names mode: a quiet re-verify without name normalization puts
+  // real Dafny identifiers in the transcript.
+  await page.click("#smt-readable");
+  await page.waitForFunction(() => window.__smtText && !window.__smtText.includes("$generated"),
+    undefined, { timeout: 120000 });
+  await page.click("#smt-readable");
+  await page.waitForFunction(() => window.__smtText?.includes("$generated"),
+    undefined, { timeout: 120000 });
   // Share: the permalink reopens the exact program in a fresh page load.
   await page.click("#share-menu-button");
   await page.click("#share");

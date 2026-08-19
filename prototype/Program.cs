@@ -48,12 +48,19 @@ public static partial class BrowserApi {
   // renders it through Dafny's own counterexample machinery (DafnyModel).
   // Opt-in because it changes the SMT exchange (get-model requests), which
   // the fidelity suite deliberately runs without.
+  // readableNames turns off Boogie's identifier normalization so the SMT
+  // transcript and Boogie program show real names (y#0,
+  // _module.__default.Abs) instead of $generated@@N. Exploration-only: it
+  // changes the SMT bytes, so the fidelity-guarded default keeps
+  // normalization on, exactly like the native CLI.
   [JSExport]
-  public static Task<string> VerifyFull(string source, int timeLimitSeconds, bool extractCounterexamples) {
-    return VerifyCore(source, timeLimitSeconds, extractCounterexamples);
+  public static Task<string> VerifyFull(string source, int timeLimitSeconds, bool extractCounterexamples,
+    bool readableNames) {
+    return VerifyCore(source, timeLimitSeconds, extractCounterexamples, readableNames);
   }
 
-  private static async Task<string> VerifyCore(string source, int timeLimitSeconds, bool extractCounterexamples = false) {
+  private static async Task<string> VerifyCore(string source, int timeLimitSeconds,
+    bool extractCounterexamples = false, bool readableNames = false) {
     await PipelineLock.WaitAsync();
     lastBoogieText = "";
     var transcript = new SmtTranscriptRecorder();
@@ -65,6 +72,9 @@ public static partial class BrowserApi {
         // makes Boogie request models (ExpectingModel) for failing assertions.
         options.ExtractCounterexample = true;
         options.EnhancedErrorMessages = 1;
+      }
+      if (readableNames) {
+        options.NormalizeNames = false;
       }
       if (timeLimitSeconds > 0) {
         options.TimeLimit = (uint)timeLimitSeconds;

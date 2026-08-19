@@ -219,6 +219,10 @@
             <div class="js-toolbar">
               <label class="sr-only" for="smt-obligation">Proof obligation</label>
               <select id="smt-obligation" hidden></select>
+              <label class="readable-toggle"
+                title="Re-verify with Boogie's name normalization off: real Dafny names instead of $generated@@N. Exploration mode — the SMT bytes differ from the CLI default.">
+                <input type="checkbox" id="smt-readable"> readable names
+              </label>
               <span class="js-toolbar-note" id="smt-note">what Boogie actually sends to Z3, and what comes back</span>
             </div>
             <div id="smt-output" class="js-editor" aria-label="SMT-LIB transcript">Verify a program, then open this tab to see the SMT-LIB conversation with Z3.</div>

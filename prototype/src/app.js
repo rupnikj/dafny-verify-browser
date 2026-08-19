@@ -1255,6 +1255,17 @@ let smtEditor = null;
 let smtDirty = false;
 let smtSections = null;
 const smtObligationSelect = document.querySelector("#smt-obligation");
+const smtReadable = document.querySelector("#smt-readable");
+
+smtReadable.addEventListener("change", () => {
+  if (running || runInFlight) {
+    smtReadable.checked = !smtReadable.checked;
+    return;
+  }
+  // Quiet re-verify (live-style: no panel switch); the fresh transcript and
+  // Boogie program re-render through the usual dirty flags.
+  runVerification({ live: true });
+});
 
 // Group the raw entry list into a session preamble (options + the Dafny
 // prelude, sent before the first obligation) and one section per proof
@@ -1780,7 +1791,7 @@ async function runVerification(options = {}) {
   try {
     const timeLimitSeconds = Number(document.querySelector("#time-limit").value) || 0;
     showVerificationResult(await verify(editor.state.doc.toString(),
-      { timeLimitSeconds, counterexamples: true }));
+      { timeLimitSeconds, counterexamples: true, readableNames: smtReadable.checked }));
   } catch (error) {
     if (String(error?.message) === "cancelled") {
       resultSummary.className = "result-summary is-idle";
@@ -1951,7 +1962,8 @@ async function runProgram() {
   try {
     const source = editor.state.doc.toString();
     const limitValue = Number(document.querySelector("#time-limit").value) || 0;
-    const verification = await verify(source, { timeLimitSeconds: limitValue, counterexamples: true });
+    const verification = await verify(source,
+      { timeLimitSeconds: limitValue, counterexamples: true, readableNames: smtReadable.checked });
     showVerificationResult(verification);
     if (!verification.verified) {
       appendRunOutput("» verification failed — not running (see the Problems tab)\n");

@@ -1059,3 +1059,14 @@ body.tutorial-on .panel {
 
 .result-icon svg { width: 14px; height: 14px; display: block; }
 .js-toolbar button svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 4px; }
+
+.readable-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-soft);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.readable-toggle input { accent-color: var(--accent-mid); margin: 0; }

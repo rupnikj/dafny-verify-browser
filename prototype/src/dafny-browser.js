@@ -188,7 +188,8 @@ export async function createDafny(options = {}) {
       }
       const timeLimitSeconds = verifyOptions.timeLimitSeconds ?? 0;
       const counterexamples = verifyOptions.counterexamples === true;
-      return call("verify", source, { timeLimitSeconds, counterexamples });
+      const readableNames = verifyOptions.readableNames === true;
+      return call("verify", source, { timeLimitSeconds, counterexamples, readableNames });
     },
 
     /**
