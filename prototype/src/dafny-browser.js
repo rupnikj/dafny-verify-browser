@@ -191,6 +191,19 @@ export async function createDafny(options = {}) {
       return call("verify", source, { timeLimitSeconds, counterexamples });
     },
 
+    /**
+     * Translate the program to JavaScript (like `dafny translate js
+     * --include-runtime`). Resolves to { ok, hasMain, js, callToMain,
+     * diagnostics, ... }; execute js + callToMain with dafny-runner.js.
+     * Does not verify — run verify() first for `dafny run` semantics.
+     */
+    compileToJs(source) {
+      if (typeof source !== "string") {
+        return Promise.reject(new TypeError("Dafny source must be a string."));
+      }
+      return call("compile", source);
+    },
+
     getLastSmtTranscript() {
       return call("transcript");
     },

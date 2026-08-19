@@ -3,15 +3,16 @@
 [![Build and deploy to Pages](https://github.com/rupnikj/dafny-verify-browser/actions/workflows/deploy.yml/badge.svg)](https://github.com/rupnikj/dafny-verify-browser/actions/workflows/deploy.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-`dafny verify` running entirely in the browser — the real Dafny 4.11.0
-frontend and Boogie 3.5.5 compiled to .NET WebAssembly, driving the official
-Z3 WebAssembly build. No verifier service, no native Z3, and the source you
-type never leaves the page.
+`dafny verify` — and now `dafny run` — entirely in the browser: the real
+Dafny 4.11.0 frontend and Boogie 3.5.5 compiled to .NET WebAssembly, driving
+the official Z3 WebAssembly build. No verifier service, no native Z3, and
+the source you type never leaves the page.
 
 **Live demo:** <https://rupnikj.github.io/dafny-verify-browser/> — includes
 an interactive **Tutorial** tab: the classic Dafny guide (formerly on
 rise4fun) with 150+ runnable examples verified in-browser, plus
-counterexample traces on failing programs.
+counterexample traces on failing programs — and a **Run** button that
+verifies, compiles to JavaScript, and executes `Main` right on the page.
 
 The first load downloads the whole verifier (~95 MB raw — a .NET runtime, 223
 managed assemblies, and a 33 MB Z3), so give it a moment; subsequent visits
@@ -78,6 +79,31 @@ At runtime, a classic Web Worker hosts both WASM runtimes (classic because
 Z3's Emscripten pthread bootstrap needs `importScripts`). Z3 uses threads, so
 the page must be cross-origin isolated — see the GitHub Pages note below.
 
+## Running programs, not just verifying them
+
+The **Run** button gives full `dafny run` semantics: verify first, then
+translate to JavaScript with Dafny's own official JS backend (already aboard
+— it lives in `DafnyCore.dll`), then execute. Native `dafny run` pipes the
+generated program into a `node` process; here the browser *is* the JS
+engine, so the "execution backend" collapses into feeding the same text to a
+throwaway Web Worker. A runaway program dies by `terminate()` (bounded by
+the time-limit selector) instead of Ctrl-C, and the page stays responsive.
+
+The generated code needs exactly two node ambients, both shimmed in the
+runner ([`src/dafny-runner.js`](prototype/src/dafny-runner.js)): a `require`
+that resolves [bignumber.js](https://github.com/MikeMcl/bignumber.js) — the
+single dependency of Dafny's JS runtime, giving exact arbitrary-precision
+`int`/`real` semantics at runtime just as in native Dafny — and a `process`
+whose `stdout.write` streams into the Run tab. `expect` failures surface as
+the same `[Program halted] ...` output as the CLI. Programs using `{:extern}`
+or reading stdin/files are out of scope, as on any online runner.
+
+Compilation happens in-process via `CompileToJs`
+([`Program.cs`](prototype/Program.cs)), mirroring the CLI driver's
+string-building path; the JS runtime rides as an embedded resource (upstream
+keeps it in `DafnyPipeline.dll`, which also carries every other target's
+runtime — shipping one file instead keeps the payload lean).
+
 ## Embedding the verifier in your own page
 
 The published site doubles as a distribution. It exposes a standalone,
@@ -140,7 +166,8 @@ Alongside the hosted demo, two fully self-contained HTML files can be built
 - **`dafny-verify.html`** (`tools/make-dafny-verify-html.mjs`, ~16.4 MB) —
   the **complete demo experience** in one file: CodeMirror editor,
   diagnostics with counterexample traces and in-editor value annotations,
-  all canned examples, and the interactive tutorial. Verification runs on
+  all canned examples, the interactive tutorial, and the Run feature
+  (compile to JS + execute, bignumber.js inlined). Verification runs on
   the page thread (the UI freezes until the verdict; the per-obligation
   time limit bounds it).
 - **`dafny-artifact.html`** (`tools/make-dafny-artifact.mjs`, ~15.8 MB) — a

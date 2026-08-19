@@ -139,6 +139,9 @@ async function start() {
               ? await exports.DafnyBrowser.BrowserApi.VerifyWithLimit(source, timeLimitSeconds)
               : await exports.DafnyBrowser.BrowserApi.Verify(source);
           break;
+        case "compile":
+          json = await exports.DafnyBrowser.BrowserApi.CompileToJs(source);
+          break;
         case "transcript":
           json = exports.DafnyBrowser.BrowserApi.GetLastSmtTranscript();
           break;

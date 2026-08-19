@@ -18,7 +18,7 @@ index 07e6b8c..a83fbbf 100644
      public static readonly TaskFactory LargeStackFactory = new(CancellationToken.None,
        TaskCreationOptions.DenyChildAttach, TaskContinuationOptions.None, LargeThreadScheduler);
 diff --git a/Source/DafnyCore/DafnyOptions.cs b/Source/DafnyCore/DafnyOptions.cs
-index a0f611e..39ccd2d 100644
+index a0f611e..d501011 100644
 --- a/Source/DafnyCore/DafnyOptions.cs
 +++ b/Source/DafnyCore/DafnyOptions.cs
 @@ -240,7 +240,19 @@ namespace Microsoft.Dafny {
@@ -42,6 +42,25 @@ index a0f611e..39ccd2d 100644
  
      public static DafnyOptions CreateUsingOldParser(TextWriter outputWriter, TextReader input = null, params string[] arguments) {
        input ??= TextReader.Null;
+@@ -349,8 +361,16 @@ namespace Microsoft.Dafny {
+ 
+     public override string VersionNumber {
+       get {
+-        return FileVersionInfo
+-          .GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion;
++        // Browser-wasm (WebCIL) assemblies have no usable Location, and
++        // FileVersionInfo is unsupported on that platform; fall back to the
++        // assembly metadata (translation records stamp this into their output).
++        try {
++          return FileVersionInfo
++            .GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion;
++        } catch (Exception) {
++          return typeof(DafnyOptions).Assembly
++            .GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0.0";
++        }
+       }
+     }
+ 
 diff --git a/Source/DafnyRuntime/DafnyRuntime.csproj b/Source/DafnyRuntime/DafnyRuntime.csproj
 index af08c92..4c753d2 100644
 --- a/Source/DafnyRuntime/DafnyRuntime.csproj

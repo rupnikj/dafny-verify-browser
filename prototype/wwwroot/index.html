@@ -72,6 +72,7 @@
                 <option value="sum">SumArray (off by one)</option>
                 <option value="first">First (empty case)</option>
                 <option value="count">CountRange (fencepost)</option>
+                <option value="fastfib">FastFib (verify &amp; run)</option>
               </optgroup>
               <optgroup label="rise4fun classics">
                 <option value="r4f_hello">Hello (is it correct?)</option>
@@ -90,9 +91,14 @@
           </label>
           <button class="tutorial-toggle" id="tutorial-toggle" type="button" aria-pressed="false" title="The classic Dafny tutorial, runnable in this page">Tutorial</button>
           <button class="verify-button" id="verify" type="button" disabled>
-            <span class="play-icon" aria-hidden="true">▶</span>
+            <span class="play-icon" aria-hidden="true">✓</span>
             <span id="verify-label">Verify</span>
             <kbd id="verify-kbd">⌘↵</kbd>
+          </button>
+          <button class="verify-button run-button" id="run" type="button" disabled
+            title="Verify, compile to JavaScript, and execute Main in this page — like `dafny run`">
+            <span class="play-icon" aria-hidden="true">▶</span>
+            <span id="run-label">Run</span>
           </button>
         </div>
       </section>
@@ -108,6 +114,7 @@
               Problems <span class="badge" id="problem-count">0</span>
             </button>
             <button class="panel-tab" id="output-tab" type="button" role="tab" aria-selected="false">Output</button>
+            <button class="panel-tab" id="run-tab" type="button" role="tab" aria-selected="false">Run</button>
           </div>
 
           <section class="result-summary is-idle" id="result-summary" aria-live="polite">
@@ -133,6 +140,10 @@
 
           <div class="panel-view output-view" id="output-view" role="tabpanel" aria-labelledby="output-tab" hidden>
             <pre id="output">Verifier is starting…</pre>
+          </div>
+
+          <div class="panel-view output-view" id="run-view" role="tabpanel" aria-labelledby="run-tab" hidden>
+            <pre id="run-output" class="run-output">Run a program with a Main method to see its output here.</pre>
           </div>
 
         </aside>

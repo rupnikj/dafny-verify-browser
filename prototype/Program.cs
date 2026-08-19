@@ -136,6 +136,83 @@ public static partial class BrowserApi {
     }
   }
 
+  // Translate the program to JavaScript the way `dafny translate js
+  // --include-runtime` does (the string-building path of the CLI driver,
+  // minus the file writing): the returned text plus callToMain is exactly
+  // what `dafny run` pipes into node's stdin — here the caller feeds it to
+  // the browser's own JS engine. Verification is the caller's business
+  // (`dafny run` verifies first, too).
+  [JSExport]
+  public static async Task<string> CompileToJs(string source) {
+    await PipelineLock.WaitAsync();
+    try {
+      var (options, reporter, _) = CreatePipeline();
+      // IncludeRuntime defaults to TRUE (the internal --include-runtime
+      // registered for execution); clear it — the code generator would fetch
+      // the runtime from DafnyPipeline.dll, which is not shipped. The embedded
+      // copy is prepended below instead: same text, same leading position.
+      options.IncludeRuntime = false;
+      options.Backend = new Microsoft.Dafny.Compilers.JavaScriptBackend(options);
+
+      var (dafnyProgram, stage) = await ParseAndResolve(source, options, reporter);
+      if (dafnyProgram == null || reporter.HasErrors) {
+        return CompileJson(false, stage, false, null, null, reporter);
+      }
+
+      foreach (var rewriter in RewriterCollection.GetRewriters(reporter, dafnyProgram)) {
+        rewriter.PostVerification(dafnyProgram);
+      }
+
+      var compiler = options.Backend;
+      compiler.OnPreCompile(reporter, new System.Collections.ObjectModel.ReadOnlyCollection<string>([]));
+      var hasMain = Microsoft.Dafny.Compilers.SinglePassCodeGenerator.HasMain(dafnyProgram, out var mainMethod);
+      if (hasMain) {
+        mainMethod.IsEntryPoint = true;
+        dafnyProgram.MainMethod = mainMethod;
+      }
+
+      // The CLI wraps this call in LargeStackFactory (a big-stack thread);
+      // browser-wasm calls it directly and accepts the same deep-recursion
+      // ceiling the Mono interpreter already imposes elsewhere.
+      var output = new ConcreteSyntaxTree();
+      compiler.Compile(dafnyProgram, "main.dfy", output);
+      var textWriter = new StringWriter();
+      output.Render(textWriter, 0, new WriterState(), new Queue<FileSyntax>(), compiler.TargetIndentSize);
+
+      string? callToMain = null;
+      if (hasMain) {
+        var callTree = new ConcreteSyntaxTree();
+        compiler.EmitCallToMain(mainMethod, "main", callTree);
+        callToMain = callTree.MakeString(compiler.TargetIndentSize);
+      }
+
+      if (reporter.HasErrors || reporter.FailCompilation) {
+        return CompileJson(false, "compilation", hasMain, null, null, reporter);
+      }
+      using var runtimeStream = Assembly.GetExecutingAssembly()
+        .GetManifestResourceStream("DafnyBrowser.DafnyRuntime.js")
+        ?? throw new InvalidOperationException("The embedded Dafny JS runtime is missing.");
+      var runtimeJs = new StreamReader(runtimeStream).ReadToEnd();
+      return CompileJson(true, "compiled", hasMain,
+        runtimeJs + "\n" + textWriter.ToString(), callToMain, reporter);
+    } catch (UnsupportedFeatureException unsupported) {
+      return JsonSerializer.Serialize(new CompileResult(false, "compilation", false, null, null, 1,
+        [new BrowserDiagnostic("error", "compiler", unsupported.Message,
+          unsupported.Token?.line, unsupported.Token?.col)]), JsonOptions);
+    } catch (Exception exception) {
+      return JsonSerializer.Serialize(new CompileResult(false, "exception", false, null, null, 1,
+        [new BrowserDiagnostic("error", "runtime", exception.ToString(), null, null)]), JsonOptions);
+    } finally {
+      PipelineLock.Release();
+    }
+  }
+
+  private static string CompileJson(bool ok, string stage, bool hasMain, string? js, string? callToMain,
+    BatchErrorReporter reporter) {
+    return JsonSerializer.Serialize(new CompileResult(ok, stage, hasMain, js, callToMain,
+      reporter.ErrorCount, ReporterDiagnostics(reporter).ToArray()), JsonOptions);
+  }
+
   [JSExport]
   public static string GetLastSmtTranscript() {
     return JsonSerializer.Serialize(lastSmtTranscript, JsonOptions);
@@ -329,6 +406,16 @@ public sealed record CounterexampleState(
   int Column,
   bool IsInitial,
   string Assumption
+);
+
+public sealed record CompileResult(
+  bool Ok,
+  string Stage,
+  bool HasMain,
+  string? Js,
+  string? CallToMain,
+  int ErrorCount,
+  IReadOnlyList<BrowserDiagnostic> Diagnostics
 );
 
 public sealed record ParseResult(

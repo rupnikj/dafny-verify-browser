@@ -46,6 +46,15 @@ try {
 const tutorialJson = (await readFile(resolve(prototypeRoot, "wwwroot/tutorial.json"), "utf8"))
   .replaceAll("</", "<\\/"); // JSON-legal, HTML-safe
 
+// --- bignumber.js: the Dafny→JS runtime's one dependency, inlined so the
+// Run feature works on file:// (the app reads #bignumber-src via textContent,
+// so the text must be embedded verbatim — assert it needs no escaping) ---
+const bignumberSource = await readFile(
+  resolve(prototypeRoot, "node_modules/bignumber.js/dist/bignumber.js"), "utf8");
+if (bignumberSource.includes("</") || bignumberSource.includes("<!--")) {
+  throw new Error("bignumber.js contains HTML-unsafe sequences; switch #bignumber-src to base64");
+}
+
 const appCss = await readFile(resolve(prototypeRoot, "src/app.css"), "utf8");
 
 // --- page: the real demo page, network references replaced with inline ---
@@ -86,6 +95,7 @@ const inlineBlocks = `
 <script type="text/plain" id="fw-b64">${encodeBase85(frameworkBr)}</script>
 <script type="text/plain" id="z3-b64">${encodeBase85(z3WasmBr)}</script>
 <script type="application/json" id="tutorial-data">${tutorialJson}</script>
+<script type="text/plain" id="bignumber-src">${bignumberSource}</script>
 `;
 html = html.replace("</head>", () => inlineBlocks + "</head>");
 html = html.replace('<script type="module" src="./app.js"></script>',

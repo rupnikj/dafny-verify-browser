@@ -268,6 +268,22 @@ button { color: inherit; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.run-button {
+  background: #1f9d61;
+  border-color: #27b571;
+}
+.run-button:hover:not(:disabled) { background: #27b571; }
+.run-button:focus-visible { outline: 2px solid #7fe0b2; }
+.run-button.is-running {
+  background: #8a4a1f;
+  border-color: #b0602a;
+}
+
+.run-output {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 34vw);

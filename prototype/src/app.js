@@ -32,6 +32,7 @@ import {
 import { search, searchKeymap } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
 import { createDafny } from "./dafny-browser.js";
+import { runCompiled } from "./dafny-runner.js";
 
 const examples = {
   abs: [
@@ -103,6 +104,38 @@ const examples = {
     "  {",
     "    n := n + 1;",
     "    i := i + 1;",
+    "  }",
+    "}"
+  ].join("\n"),
+  fastfib: [
+    "// The classic payoff of verification: prove the fast iterative",
+    "// implementation equal to the obviously-correct recursive spec —",
+    "// then actually run it, right here in the browser.",
+    "function Fib(n: nat): nat {",
+    "  if n < 2 then n else Fib(n - 1) + Fib(n - 2)",
+    "}",
+    "",
+    "method FastFib(n: nat) returns (b: nat)",
+    "  ensures b == Fib(n)",
+    "{",
+    "  var i := 0;",
+    "  b := 0;",
+    "  var c := 1;",
+    "  while i < n",
+    "    invariant 0 <= i <= n",
+    "    invariant b == Fib(i) && c == Fib(i + 1)",
+    "  {",
+    "    b, c := c, b + c;",
+    "    i := i + 1;",
+    "  }",
+    "}",
+    "",
+    "method Main() {",
+    "  var i := 0;",
+    "  while i <= 40 {",
+    "    var f := FastFib(i);",
+    "    print \"Fib(\", i, \") = \", f, \"\\n\";",
+    "    i := i + 10;",
     "  }",
     "}"
   ].join("\n"),
@@ -638,6 +671,11 @@ const outputTab = document.querySelector("#output-tab");
 const problemsView = document.querySelector("#problems-view");
 const outputView = document.querySelector("#output-view");
 const output = document.querySelector("#output");
+const runButton = document.querySelector("#run");
+const runLabel = document.querySelector("#run-label");
+const runTab = document.querySelector("#run-tab");
+const runView = document.querySelector("#run-view");
+const runOutput = document.querySelector("#run-output");
 const problemCount = document.querySelector("#problem-count");
 const problemFilters = document.querySelector("#problem-filters");
 const problemsList = document.querySelector("#problems-list");
@@ -676,10 +714,12 @@ const verifierReady = createDafny({
       ? "Cancelled — restarting verifier…"
       : "Verifier crashed — restarting…";
     verifyButton.disabled = true;
+    runButton.disabled = true;
     dafnyInstance?.whenReady().then(() => {
       runtimeDot.className = "status-dot is-ready";
       runtimeLabel.textContent = "Verifier ready";
       verifyButton.disabled = false;
+      runButton.disabled = false;
     }).catch(() => {
       runtimeDot.className = "status-dot is-error";
       runtimeLabel.textContent = "Verifier unavailable — reload the page";
@@ -755,7 +795,8 @@ updateCursor(editor);
 
 const panels = {
   problems: [problemsTab, problemsView],
-  output: [outputTab, outputView]
+  output: [outputTab, outputView],
+  run: [runTab, runView]
 };
 
 function setPanel(panel) {
@@ -769,6 +810,7 @@ function setPanel(panel) {
 
 problemsTab.addEventListener("click", () => setPanel("problems"));
 outputTab.addEventListener("click", () => setPanel("output"));
+runTab.addEventListener("click", () => setPanel("run"));
 
 const tutorialToggle = document.querySelector("#tutorial-toggle");
 const tutorialPane = document.querySelector("#tutorial-pane");
@@ -1071,6 +1113,7 @@ function setRunningState(isRunning) {
   verifyButton.disabled = false;
   verifyButton.classList.toggle("is-running", isRunning);
   verifyLabel.textContent = isRunning ? "Cancel" : "Verify";
+  runButton.disabled = isRunning;
 }
 
 function showVerificationResult(result) {
@@ -1168,6 +1211,147 @@ async function runVerification() {
 
 verifyButton.addEventListener("click", runVerification);
 
+// ---------- Run (`dafny run` in the browser: verify, compile to JS, execute) ----------
+
+let bignumberSourcePromise = null;
+function loadBignumberSource() {
+  // The single-file build inlines bignumber.js (fetch fails on file://).
+  bignumberSourcePromise ??= (async () => {
+    const inline = document.querySelector("#bignumber-src");
+    if (inline) {
+      return inline.textContent;
+    }
+    const response = await fetch(new URL("vendor/bignumber.js", window.location.href));
+    if (!response.ok) {
+      throw new Error("could not load vendor/bignumber.js: HTTP " + response.status);
+    }
+    return response.text();
+  })();
+  return bignumberSourcePromise;
+}
+
+let runInFlight = null; // { phase: "verify" | "execute", cancelExecute?: () => void }
+
+function setRunUiState(isRunning) {
+  runLabel.textContent = isRunning ? "Stop" : "Run";
+  runButton.classList.toggle("is-running", isRunning);
+  if (isRunning) {
+    verifyButton.disabled = true;
+  } else {
+    // If a Stop recycled the worker, wait for the respawn before re-enabling.
+    dafnyInstance?.whenReady()
+      .then(() => { verifyButton.disabled = false; })
+      .catch(() => {});
+  }
+}
+
+function appendRunOutput(text) {
+  runOutput.textContent += text;
+  runView.scrollTop = runView.scrollHeight;
+}
+
+function showRunOutcome(kind, title, detail, stage) {
+  resultSummary.className = "result-summary " + kind;
+  resultIcon.textContent = kind === "is-success" ? "✓" : kind === "is-error" ? "×" : "◇";
+  resultTitle.textContent = title;
+  resultDetail.textContent = detail;
+  verificationStage.textContent = stage;
+}
+
+async function runProgram() {
+  if (runInFlight) {
+    if (runInFlight.phase === "execute") {
+      runInFlight.cancelExecute?.();
+    } else {
+      dafnyInstance?.cancel();
+    }
+    return;
+  }
+  if (runButton.disabled || running) {
+    return;
+  }
+  runInFlight = { phase: "verify" };
+  setRunUiState(true);
+  setPanel("run");
+  runOutput.textContent = "";
+  showRunOutcome("is-running", "Verifying before running", "dafny run verifies first", "Run: verifying");
+  resultIcon.textContent = "…";
+  appendRunOutput("» dafny run — verify, compile to JavaScript, execute (all in this browser)\n» verifying…\n");
+
+  try {
+    const source = editor.state.doc.toString();
+    const limitValue = Number(document.querySelector("#time-limit").value) || 0;
+    const verification = await verify(source, { timeLimitSeconds: limitValue, counterexamples: true });
+    showVerificationResult(verification);
+    if (!verification.verified) {
+      appendRunOutput("» verification failed — not running (see the Problems tab)\n");
+      setPanel("problems");
+      return;
+    }
+    appendRunOutput("» verified (" + verification.verifiedCount + " obligations) — compiling to JavaScript…\n");
+    verificationStage.textContent = "Run: compiling";
+    const compiled = await verifierReady.then(dafny => dafny.compileToJs(source));
+    if (!compiled.ok) {
+      showVerificationResult({ ...compiled, verified: false, verifiedCount: 0, smtExchangeCount: 0 });
+      appendRunOutput("» compilation failed (see the Problems tab)\n");
+      setPanel("problems");
+      return;
+    }
+    if (!compiled.hasMain) {
+      appendRunOutput("» no Main method — nothing to execute.\n» The program verified; add `method Main() { ... }` to run it.\n");
+      showRunOutcome("is-idle", "Nothing to run", "Verified, but there is no Main method.", "Run: no Main");
+      return;
+    }
+    appendRunOutput("» compiled to " + Math.round(compiled.js.length / 1024) + " KB of JavaScript — running Main…\n\n");
+    showRunOutcome("is-running", "Running", "Executing the compiled JavaScript", "Run: executing");
+    resultIcon.textContent = "…";
+    const timeoutMs = limitValue > 0 ? limitValue * 1000 : limitValue < 0 ? 0 : 30000;
+    const bignumberSource = await loadBignumberSource();
+    const startedAt = performance.now();
+    const execution = runCompiled({
+      program: compiled.js,
+      callToMain: compiled.callToMain,
+      bignumberSource,
+      timeoutMs,
+      onOutput: appendRunOutput
+    });
+    runInFlight = { phase: "execute", cancelExecute: execution.cancel };
+    const result = await execution.done;
+    const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
+    if (result.ok) {
+      appendRunOutput("\n» program finished in " + seconds + "s\n");
+      showRunOutcome("is-success", "Program finished",
+        "Verified, compiled, and executed in " + seconds + "s.", "Run: finished");
+    } else if (result.timedOut) {
+      appendRunOutput("\n» terminated: still running after " + (timeoutMs / 1000) + "s (the time-limit selector bounds execution too)\n");
+      showRunOutcome("is-error", "Program terminated",
+        "Still running after " + (timeoutMs / 1000) + "s — stopped.", "Run: terminated");
+    } else if (result.cancelled) {
+      appendRunOutput("\n» stopped\n");
+      showRunOutcome("is-idle", "Stopped", "Program execution was stopped.", "Run: stopped");
+    } else if (result.error === undefined) {
+      // A Dafny halt (`expect` failure): [Program halted] is already in the output.
+      appendRunOutput("\n» program halted (exit code " + result.exitCode + ") after " + seconds + "s\n");
+      showRunOutcome("is-error", "Program halted", "Main hit a halt — see the Run tab.", "Run: halted");
+    } else {
+      appendRunOutput("\n» runtime error:\n" + result.error + "\n");
+      showRunOutcome("is-error", "Runtime error", "The compiled program threw — see the Run tab.", "Run: error");
+    }
+  } catch (error) {
+    if (String(error?.message) === "cancelled") {
+      appendRunOutput("\n» stopped during verification\n");
+      showRunOutcome("is-idle", "Stopped", "Run aborted; the verifier is restarting.", "Run: stopped");
+    } else {
+      showRuntimeError(error);
+    }
+  } finally {
+    runInFlight = null;
+    setRunUiState(false);
+  }
+}
+
+runButton.addEventListener("click", runProgram);
+
 exampleSelect.addEventListener("change", () => {
   const source = examples[exampleSelect.value] ?? examples.abs;
   editor.dispatch({
@@ -1184,6 +1368,7 @@ verifierReady.then(() => {
   runtimeNote.hidden = true;
   loadProgress.hidden = true;
   verifyButton.disabled = false;
+  runButton.disabled = false;
   output.textContent = "Dafny, Boogie, and Z3 WASM are ready.";
 }).catch(error => {
   runtimeDot.className = "status-dot is-error";
@@ -1192,5 +1377,6 @@ verifierReady.then(() => {
   runtimeNote.hidden = true;
   loadProgress.hidden = true;
   verifyButton.disabled = true;
+  runButton.disabled = true;
   showRuntimeError(error);
 });

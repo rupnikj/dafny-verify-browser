@@ -115,6 +115,9 @@ export async function createDafny(options = {}) {
           : await api.Verify(source);
       return JSON.parse(json);
     },
+    async compileToJs(source) {
+      return JSON.parse(await api.CompileToJs(source));
+    },
     async getLastSmtTranscript() {
       return JSON.parse(api.GetLastSmtTranscript());
     },

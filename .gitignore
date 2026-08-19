@@ -13,6 +13,7 @@ prototype/NativeHarness/obj/
 
 # Generated web assets (produced by `npm run build:assets`)
 prototype/wwwroot/z3/
+prototype/wwwroot/vendor/
 prototype/wwwroot/z3-api.js
 prototype/wwwroot/app.js
 prototype/wwwroot/app.js.map

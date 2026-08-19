@@ -24,5 +24,11 @@
     <EmbeddedResource Include="../upstream-dafny/Source/DafnyCore/DafnyPrelude.bpl">
       <LogicalName>DafnyBrowser.DafnyPrelude.bpl</LogicalName>
     </EmbeddedResource>
+    <!-- The JS target runtime normally rides in DafnyPipeline.dll (which also
+         embeds every other target's runtime); embed just this one file and
+         prepend it in CompileToJs instead of referencing DafnyPipeline. -->
+    <EmbeddedResource Include="../upstream-dafny/Source/DafnyRuntime/DafnyRuntimeJs/DafnyRuntime.js">
+      <LogicalName>DafnyBrowser.DafnyRuntime.js</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>

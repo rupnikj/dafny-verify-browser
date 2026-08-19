@@ -43,6 +43,13 @@ await build({
 
 await copyFile(resolve(prototypeRoot, "src/app.css"), resolve(webRoot, "app.css"));
 
+// The Dafny→JavaScript runtime's one dependency (DafnyRuntime.js line 4);
+// fetched lazily by the Run feature and fed to the runner as source text.
+await mkdir(resolve(webRoot, "vendor"), { recursive: true });
+await copyFile(
+  resolve(prototypeRoot, "node_modules/bignumber.js/dist/bignumber.js"),
+  resolve(webRoot, "vendor/bignumber.js"));
+
 await Promise.all([
   copyFile(resolve(installedZ3Root, "z3-built.js"), resolve(z3Root, "z3-built.js")),
   copyFile(resolve(installedZ3Root, "z3-built.wasm"), resolve(z3Root, "z3-built.wasm"))

@@ -124,6 +124,16 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (problemsVisible !== 1 || tutorialVisible !== 1) {
     throw new Error("tutorial mode layout broken: problems=" + problemsVisible + " tutorial=" + tutorialVisible);
   }
+  await page.click("#tutorial-toggle");
+  // Run: verify → compile to JS → execute Main in a throwaway worker.
+  await page.selectOption("#example", "fastfib");
+  await page.click("#run");
+  await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
+  const runText = await page.locator("#run-output").textContent();
+  if (!runText.includes("Fib(40) = 102334155")) {
+    throw new Error("run output missing Fib(40): " + runText.slice(-400));
+  }
+  console.log("  run: FastFib executed, output verified");
 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero
@@ -214,7 +224,8 @@ if (withSingleFile) {
     const requests = [];
     page.on("request", request => {
       const url = request.url();
-      if (!url.startsWith("data:") && !url.includes("dafny-verify.html")) requests.push(url);
+      // blob: is the runner worker's own script — in-memory, not network.
+      if (!url.startsWith("data:") && !url.startsWith("blob:") && !url.includes("dafny-verify.html")) requests.push(url);
     });
     await page.goto(base + "/dafny-verify.html", { waitUntil: "domcontentloaded" });
     await page.waitForFunction(
@@ -226,6 +237,15 @@ if (withSingleFile) {
     await page.waitForSelector(".cex-constraint", { timeout: 30000 });
     await page.click("#tutorial-toggle");
     await page.waitForSelector(".tutorial-code", { timeout: 30000 });
+    await page.click("#tutorial-toggle");
+    // Run works from the inline payloads too (bignumber-src is embedded).
+    await page.selectOption("#example", "fastfib");
+    await page.click("#run");
+    await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
+    const runText = await page.locator("#run-output").textContent();
+    if (!runText.includes("Fib(40) = 102334155")) {
+      throw new Error("single-file run output missing Fib(40): " + runText.slice(-400));
+    }
     if (requests.length) {
       throw new Error("unexpected network requests: " + requests.slice(0, 5).join(", "));
     }
