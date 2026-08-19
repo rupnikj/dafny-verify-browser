@@ -121,6 +121,9 @@ export async function createDafny(options = {}) {
     async getLastSmtTranscript() {
       return JSON.parse(api.GetLastSmtTranscript());
     },
+    async getLastBoogie() {
+      return JSON.parse(api.GetLastBoogie());
+    },
     cancel() {
       // Single-threaded: a running proof cannot be interrupted; the
       // per-obligation time limit is the bound.

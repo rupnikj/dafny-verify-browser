@@ -237,6 +237,14 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (!consoleRun.some(line => line.includes("Fib(40) = 102334155"))) {
     throw new Error("runnable script console output wrong: " + consoleRun.slice(0, 5).join(" | "));
   }
+  // Boogie tab: the program-specific translation, prelude filtered out.
+  await openInternals(page, "boogie");
+  await page.waitForSelector("#boogie-view .cm-editor", { timeout: 30000 });
+  const boogieText = await page.evaluate(() => window.__boogieText ?? "");
+  if (!boogieText.includes("implementation") || boogieText.includes("tickleBool")) {
+    throw new Error("Boogie tab wrong: hasImpl=" + boogieText.includes("implementation") +
+      " preludeFiltered=" + !boogieText.includes("tickleBool") + " len=" + boogieText.length);
+  }
   // SMT tab: the transcript of the last verification, rendered as SMT-LIB.
   await openInternals(page, "smt");
   await page.waitForSelector("#smt-view .cm-editor", { timeout: 30000 });

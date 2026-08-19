@@ -106,11 +106,22 @@ export async function buildFrameworkBundle(frameworkRoot, {
     .filter(name => !excludeNames || !excludeNames.has(name))
     .sort();
 
+  // Read first, then order by size ascending: small (mutually similar) IL
+  // assemblies cluster inside brotli's 16 MB window and the big dissimilar
+  // blobs (dotnet.native.wasm, DafnyCore) go last — measured ~30 KB smaller
+  // than alphabetical order at q11/lgwin24. Offsets live in the manifest, so
+  // consumers are order-agnostic.
+  const contents = new Map();
+  for (const name of names) {
+    contents.set(name, await readFile(resolve(frameworkRoot, name)));
+  }
+  names.sort((x, y) => contents.get(x).byteLength - contents.get(y).byteLength);
+
   const files = [];
   const chunks = [];
   let offset = 0;
   for (const name of names) {
-    let bytes = await readFile(resolve(frameworkRoot, name));
+    let bytes = contents.get(name);
     if (loaderScriptPattern.test(name)) {
       bytes = inlineRegistry
         ? transformLoaderModuleForRegistry(name, bytes)

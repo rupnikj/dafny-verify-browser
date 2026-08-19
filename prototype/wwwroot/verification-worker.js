@@ -215,6 +215,9 @@ async function start() {
         case "transcript":
           json = exports.DafnyBrowser.BrowserApi.GetLastSmtTranscript();
           break;
+        case "boogie":
+          json = exports.DafnyBrowser.BrowserApi.GetLastBoogie();
+          break;
         default:
           throw new Error(`Unknown operation: ${operation}`);
       }

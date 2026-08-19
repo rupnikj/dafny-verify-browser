@@ -736,6 +736,10 @@ const runOutput = document.querySelector("#run-output");
 const jsTab = document.querySelector("#js-tab");
 const jsView = document.querySelector("#js-view");
 const jsOutput = document.querySelector("#js-output");
+const boogieTab = document.querySelector("#boogie-tab");
+const boogieView = document.querySelector("#boogie-view");
+const boogieOutput = document.querySelector("#boogie-output");
+const boogieNote = document.querySelector("#boogie-note");
 const smtTab = document.querySelector("#smt-tab");
 const smtView = document.querySelector("#smt-view");
 const smtOutput = document.querySelector("#smt-output");
@@ -804,7 +808,8 @@ verifierReady.then(dafny => { dafnyInstance = dafny; });
 const parse = source => verifierReady.then(dafny => dafny.parse(source));
 const verify = (source, verifyOptions) => verifierReady.then(dafny => dafny.verify(source, verifyOptions));
 const getLastSmtTranscript = () => verifierReady.then(dafny => dafny.getLastSmtTranscript());
-window.dafny = { parse, verify, getLastSmtTranscript };
+const getLastBoogie = () => verifierReady.then(dafny => dafny.getLastBoogie());
+window.dafny = { parse, verify, getLastSmtTranscript, getLastBoogie };
 
 function updateCursor(view) {
   const head = view.state.selection.main.head;
@@ -873,6 +878,7 @@ const panels = {
   output: [outputTab, outputView],
   run: [runTab, runView],
   js: [jsTab, jsView],
+  boogie: [boogieTab, boogieView],
   smt: [smtTab, smtView]
 };
 
@@ -884,7 +890,7 @@ const hoodTab = document.querySelector("#hood-tab");
 const hoodBar = document.querySelector("#hood-bar");
 const internalsReveal = document.querySelector("#internals-reveal");
 const internalsHide = document.querySelector("#internals-hide");
-const HOOD_VIEWS = ["js", "smt", "output"];
+const HOOD_VIEWS = ["js", "boogie", "smt", "output"];
 const INTERNALS_KEY = "dafny-verify-internals";
 let lastHoodView = "js";
 
@@ -933,6 +939,7 @@ runTab.addEventListener("click", () => setPanel("run"));
 hoodTab.addEventListener("click", () => {
   setPanel(lastHoodView);
   if (lastHoodView === "smt") renderSmtTranscript();
+  if (lastHoodView === "boogie") renderBoogie();
 });
 internalsReveal.addEventListener("click", () => {
   setInternalsOpen(true);
@@ -943,6 +950,7 @@ internalsHide.addEventListener("click", () => {
   setPanel("problems");
 });
 jsTab.addEventListener("click", () => setPanel("js"));
+boogieTab.addEventListener("click", () => { setPanel("boogie"); renderBoogie(); });
 outputTab.addEventListener("click", () => setPanel("output"));
 smtTab.addEventListener("click", () => { setPanel("smt"); renderSmtTranscript(); });
 
@@ -1067,6 +1075,99 @@ document.querySelector("#examples-menu").addEventListener("click", event => {
   });
   editor.focus();
 });
+
+// ---------- Boogie translation tab ----------
+// The readable middle layer: Dafny -> Boogie -> verification conditions ->
+// SMT. Fetched lazily on tab open; prelude declarations are filtered on the
+// C# side, so this is the program-specific translation only.
+const boogieLanguage = StreamLanguage.define({
+  name: "boogie",
+  startState: () => ({ blockComment: false }),
+  token(stream, state) {
+    if (state.blockComment) {
+      if (stream.skipTo("*/")) {
+        stream.match("*/");
+        state.blockComment = false;
+      } else {
+        stream.skipToEnd();
+      }
+      return "comment";
+    }
+    if (stream.eatSpace()) return null;
+    if (stream.match("//")) { stream.skipToEnd(); return "comment"; }
+    if (stream.match("/*")) { state.blockComment = true; return "comment"; }
+    if (stream.match(/^"(?:[^"\\]|\\.)*"?/)) return "string";
+    if (stream.match(/^\{:/)) { stream.match(/^[\w.]+/); return "meta"; }
+    if (stream.match(/^-?\d+(?:\.\d+|bv\d+|e-?\d+)?/)) return "number";
+    if (stream.match(/^[a-zA-Z_$'#.@!^?`~][\w$'#.@!^?`~]*/)) {
+      const word = stream.current();
+      if (BOOGIE_KEYWORDS.has(word)) return "keyword";
+      if (BOOGIE_TYPES.has(word)) return "typeName";
+      if (word === "true" || word === "false") return "bool";
+      return "variableName";
+    }
+    if (stream.match(/^(?:==>|<==>|&&|\|\||[=<>!+\-*\/%:]=?)/)) return "operator";
+    stream.next();
+    return null;
+  }
+});
+const BOOGIE_KEYWORDS = new Set(["type", "const", "function", "axiom", "var",
+  "procedure", "implementation", "returns", "requires", "ensures", "modifies",
+  "free", "invariant", "assert", "assume", "havoc", "call", "goto", "return",
+  "if", "else", "while", "break", "where", "unique", "complete", "finite",
+  "old", "forall", "exists", "lambda", "cast", "div", "mod", "uses", "hideable", "reveal"]);
+const BOOGIE_TYPES = new Set(["bool", "int", "real", "bv8", "bv16", "bv32", "bv64"]);
+
+let boogieEditor = null;
+let boogieDirty = false;
+
+async function renderBoogie() {
+  if (!boogieDirty) return;
+  boogieDirty = false;
+  try {
+    const text = await getLastBoogie();
+    if (!text) {
+      boogieNote.textContent = "no Boogie program recorded — verify first";
+      return;
+    }
+    window.__boogieText = text;
+    boogieNote.textContent = text.split("\n").length + " lines, " +
+      (text.length / 1024).toFixed(0) + " KB (prelude axioms omitted)";
+    if (!boogieEditor) {
+      boogieOutput.textContent = "";
+      boogieEditor = new EditorView({
+        parent: boogieOutput,
+        state: EditorState.create({
+          doc: "",
+          extensions: [
+            lineNumbers(),
+            highlightSpecialChars(),
+            drawSelection(),
+            search({ top: true }),
+            boogieLanguage,
+            syntaxHighlighting(dafnyHighlight),
+            themedEditorExtension(() => boogieEditor),
+            EditorState.readOnly.of(true),
+            keymap.of([...defaultKeymap, ...searchKeymap])
+          ]
+        })
+      });
+    }
+    boogieEditor.dispatch({ changes: { from: 0, to: boogieEditor.state.doc.length, insert: text } });
+    // Open at the first implementation — the readable part — rather than
+    // the module-level type/axiom plumbing above it.
+    const firstImplementation = text.indexOf("\nimplementation");
+    if (firstImplementation >= 0) {
+      boogieEditor.dispatch({
+        selection: { anchor: firstImplementation + 1 },
+        effects: EditorView.scrollIntoView(firstImplementation + 1, { y: "start", yMargin: 8 })
+      });
+    }
+  } catch (error) {
+    boogieNote.textContent = "could not load the Boogie program: " + (error?.message ?? error);
+    boogieDirty = true;
+  }
+}
 
 // ---------- SMT transcript tab ----------
 // The actual SMT-LIB conversation between Boogie and Z3 for the last
@@ -1529,8 +1630,12 @@ function showVerificationResult(result) {
   renderProblems();
   output.textContent = JSON.stringify(result, null, 2);
   smtDirty = true;
+  boogieDirty = true;
   if (!panels.smt[1].hidden) {
     renderSmtTranscript();
+  }
+  if (!panels.boogie[1].hidden) {
+    renderBoogie();
   }
   modifiedDot.classList.remove("is-visible");
   verificationStage.textContent = result.stage + " • " + result.smtExchangeCount + " SMT exchanges";

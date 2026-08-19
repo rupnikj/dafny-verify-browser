@@ -55,6 +55,7 @@ public static partial class BrowserApi {
 
   private static async Task<string> VerifyCore(string source, int timeLimitSeconds, bool extractCounterexamples = false) {
     await PipelineLock.WaitAsync();
+    lastBoogieText = "";
     var transcript = new SmtTranscriptRecorder();
     try {
       var (options, reporter, printer) = CreatePipeline();
@@ -78,6 +79,7 @@ public static partial class BrowserApi {
       }
 
       var translatedPrograms = BoogieGenerator.Translate(dafnyProgram, reporter).ToList();
+      lastBoogieText = RenderBoogie(translatedPrograms, options);
       if (reporter.HasErrors) {
         return VerificationJson(false, 0, reporter.ErrorCount,
           ReporterDiagnostics(reporter), "translation", transcript);
@@ -216,6 +218,41 @@ public static partial class BrowserApi {
   [JSExport]
   public static string GetLastSmtTranscript() {
     return JsonSerializer.Serialize(lastSmtTranscript, JsonOptions);
+  }
+
+  // The Boogie program the last verification translated to — the readable
+  // middle layer between Dafny and the SMT queries. Prelude declarations
+  // (DafnyPrelude.bpl axiomatization, constant for every program) are
+  // filtered out by source token; what remains is the program-specific
+  // translation.
+  [JSExport]
+  public static string GetLastBoogie() {
+    return JsonSerializer.Serialize(lastBoogieText, JsonOptions);
+  }
+
+  private static string lastBoogieText = "";
+
+  private static string RenderBoogie(
+    IEnumerable<Tuple<string, Microsoft.Boogie.Program>> programs, DafnyOptions options) {
+    try {
+      var writer = new StringWriter();
+      foreach (var (moduleName, boogieProgram) in programs) {
+        writer.WriteLine($"// ============ Boogie translation: module {moduleName} ============");
+        var tokenWriter = new Microsoft.Boogie.TokenTextWriter("<buffer>", writer, false, false, options);
+        foreach (var declaration in boogieProgram.TopLevelDeclarations) {
+          var file = declaration.tok?.filename;
+          if (file != null && file.EndsWith("DafnyPrelude.bpl")) {
+            continue;
+          }
+          declaration.Emit(tokenWriter, 0);
+          writer.WriteLine();
+        }
+      }
+      return writer.ToString();
+    } catch (Exception exception) {
+      // Printing is diagnostics-only; it must never break verification.
+      return "// could not print the Boogie program: " + exception.Message;
+    }
   }
 
   // Diagnostic for the inline tier's assembly trimming: which assemblies are

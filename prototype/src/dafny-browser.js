@@ -208,6 +208,12 @@ export async function createDafny(options = {}) {
       return call("transcript");
     },
 
+    /** The Boogie program the last verification translated to (prelude
+     *  declarations filtered out); "" before the first verify. */
+    getLastBoogie() {
+      return call("boogie");
+    },
+
     /**
      * Abort the in-flight verification by recycling the worker. The rejected
      * in-flight promises carry "cancelled"; readiness is re-established
