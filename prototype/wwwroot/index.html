@@ -89,6 +89,10 @@
               </optgroup>
             </select>
           </label>
+          <button class="tutorial-toggle" id="share" type="button" disabled
+            title="Copy a link that opens this exact program, verifying live, in the recipient's browser — the code travels in the URL fragment and is never sent to any server">Share</button>
+          <button class="tutorial-toggle" id="live-toggle" type="button" aria-pressed="false"
+            title="Re-verify automatically as you type (after a short pause)">Live</button>
           <button class="tutorial-toggle" id="tutorial-toggle" type="button" aria-pressed="false" title="The classic Dafny tutorial, runnable in this page">Tutorial</button>
           <button class="verify-button" id="verify" type="button" disabled>
             <span class="play-icon" aria-hidden="true">✓</span>
@@ -117,6 +121,8 @@
             <button class="panel-tab" id="run-tab" type="button" role="tab" aria-selected="false">Run</button>
             <button class="panel-tab" id="js-tab" type="button" role="tab" aria-selected="false"
               title="The JavaScript your verified program compiles to">JS</button>
+            <button class="panel-tab" id="smt-tab" type="button" role="tab" aria-selected="false"
+              title="The actual SMT-LIB conversation between Boogie and Z3 for the last verification">SMT</button>
           </div>
 
           <section class="result-summary is-idle" id="result-summary" aria-live="polite">
@@ -155,6 +161,13 @@
                 title="Copy the complete program — runtime, bignumber.js, and console shims included — ready to paste into any browser console or node">⧉ Copy runnable script</button>
             </div>
             <div id="js-output" class="js-editor" aria-label="Compiled JavaScript">Run a program to see the JavaScript it compiles to.</div>
+          </div>
+
+          <div class="panel-view js-view" id="smt-view" role="tabpanel" aria-labelledby="smt-tab" hidden>
+            <div class="js-toolbar">
+              <span class="js-toolbar-note" id="smt-note">what Boogie actually sends to Z3, and what comes back</span>
+            </div>
+            <div id="smt-output" class="js-editor" aria-label="SMT-LIB transcript">Verify a program, then open this tab to see the SMT-LIB conversation with Z3.</div>
           </div>
 
         </aside>

@@ -31,6 +31,7 @@ import {
 } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
 import { javascript } from "@codemirror/legacy-modes/mode/javascript";
+import { scheme } from "@codemirror/legacy-modes/mode/scheme";
 import { tags } from "@lezer/highlight";
 import { createDafny } from "./dafny-browser.js";
 import { runCompiled } from "./dafny-runner.js";
@@ -680,6 +681,10 @@ const runOutput = document.querySelector("#run-output");
 const jsTab = document.querySelector("#js-tab");
 const jsView = document.querySelector("#js-view");
 const jsOutput = document.querySelector("#js-output");
+const smtTab = document.querySelector("#smt-tab");
+const smtView = document.querySelector("#smt-view");
+const smtOutput = document.querySelector("#smt-output");
+const smtNote = document.querySelector("#smt-note");
 const problemCount = document.querySelector("#problem-count");
 const problemFilters = document.querySelector("#problem-filters");
 const problemsList = document.querySelector("#problems-list");
@@ -790,6 +795,7 @@ editor = new EditorView({
         updateCursor(update.view);
         if (update.docChanged) {
           clearResultForEdit();
+          scheduleLiveVerify();
         }
       })
     ]
@@ -801,7 +807,8 @@ const panels = {
   problems: [problemsTab, problemsView],
   output: [outputTab, outputView],
   run: [runTab, runView],
-  js: [jsTab, jsView]
+  js: [jsTab, jsView],
+  smt: [smtTab, smtView]
 };
 
 function setPanel(panel) {
@@ -817,6 +824,76 @@ problemsTab.addEventListener("click", () => setPanel("problems"));
 outputTab.addEventListener("click", () => setPanel("output"));
 runTab.addEventListener("click", () => setPanel("run"));
 jsTab.addEventListener("click", () => setPanel("js"));
+smtTab.addEventListener("click", () => { setPanel("smt"); renderSmtTranscript(); });
+
+// ---------- SMT transcript tab ----------
+// The actual SMT-LIB conversation between Boogie and Z3 for the last
+// verification — fetched lazily on tab open (transcripts run to hundreds of
+// KB; CodeMirror virtualizes the rendering). Entries: {kind: "problem",
+// input: name} markers and {kind: "exchange", input: script, output:
+// response} pairs; responses become comments so the text stays one valid
+// SMT-LIB document for the scheme highlighter.
+const smtLanguage = StreamLanguage.define(scheme);
+const SMT_RENDER_LIMIT = 4 * 1024 * 1024;
+let smtEditor = null;
+let smtDirty = false;
+
+async function renderSmtTranscript() {
+  if (!smtDirty) return;
+  smtDirty = false;
+  try {
+    const entries = await getLastSmtTranscript();
+    if (!Array.isArray(entries) || entries.length === 0) {
+      smtNote.textContent = "no transcript recorded for the last verification";
+      return;
+    }
+    const parts = [];
+    let exchange = 0;
+    for (const entry of entries) {
+      if (entry.kind === "problem") {
+        parts.push(`\n;; ============ proof obligation: ${entry.input} ============\n`);
+      } else {
+        exchange += 1;
+        parts.push(`\n;; ---- exchange ${exchange}: Boogie sends ----\n`);
+        parts.push(entry.input.trim() + "\n");
+        parts.push(`;; ---- Z3 answers ----\n`);
+        parts.push(entry.output.trim().split("\n").map(line => ";;   " + line).join("\n") + "\n");
+      }
+    }
+    let text = parts.join("");
+    if (text.length > SMT_RENDER_LIMIT) {
+      text = text.slice(0, SMT_RENDER_LIMIT) +
+        "\n;; …truncated for display (" + ((text.length / 1048576).toFixed(1)) + " MB total)\n";
+    }
+    window.__smtText = text;
+    smtNote.textContent = exchange + " exchanges, " +
+      (text.length / 1024).toFixed(0) + " KB of SMT-LIB";
+    if (!smtEditor) {
+      smtOutput.textContent = "";
+      smtEditor = new EditorView({
+        parent: smtOutput,
+        state: EditorState.create({
+          doc: "",
+          extensions: [
+            lineNumbers(),
+            highlightSpecialChars(),
+            drawSelection(),
+            search({ top: true }),
+            smtLanguage,
+            syntaxHighlighting(dafnyHighlight),
+            editorTheme,
+            EditorState.readOnly.of(true),
+            keymap.of([...defaultKeymap, ...searchKeymap])
+          ]
+        })
+      });
+    }
+    smtEditor.dispatch({ changes: { from: 0, to: smtEditor.state.doc.length, insert: text } });
+  } catch (error) {
+    smtNote.textContent = "could not load the transcript: " + (error?.message ?? error);
+    smtDirty = true;
+  }
+}
 
 const tutorialToggle = document.querySelector("#tutorial-toggle");
 const tutorialPane = document.querySelector("#tutorial-pane");
@@ -1137,6 +1214,10 @@ function showVerificationResult(result) {
   ] });
   renderProblems();
   output.textContent = JSON.stringify(result, null, 2);
+  smtDirty = true;
+  if (!panels.smt[1].hidden) {
+    renderSmtTranscript();
+  }
   modifiedDot.classList.remove("is-visible");
   verificationStage.textContent = result.stage + " • " + result.smtExchangeCount + " SMT exchanges";
 
@@ -1174,16 +1255,21 @@ function showRuntimeError(error) {
   verificationStage.textContent = "Runtime error";
 }
 
-async function runVerification() {
+async function runVerification(options = {}) {
+  const live = options?.live === true;
   if (running) {
-    dafnyInstance?.cancel();
+    if (!live) {
+      dafnyInstance?.cancel();
+    }
     return;
   }
   if (verifyButton.disabled) {
     return;
   }
   setRunningState(true);
-  setPanel("problems");
+  if (!live) {
+    setPanel("problems");
+  }
   currentDiagnostics = [];
   suppressEmptyState = true;
   editor.dispatch({ effects: setDiagnosticsEffect.of([]) });
@@ -1215,7 +1301,49 @@ async function runVerification() {
   }
 }
 
-verifyButton.addEventListener("click", runVerification);
+verifyButton.addEventListener("click", () => runVerification());
+
+// ---------- Live mode (verify-as-you-type) ----------
+// Opt-in: after a short idle pause, re-verify automatically. In-flight work
+// is never cancelled (a worker recycle costs seconds) — the doc-change
+// listener simply schedules again, so the latest text verifies as soon as
+// the verifier is free. Bounded to modest program sizes; heavy proofs and
+// the Run flow keep the manual buttons.
+const liveToggle = document.querySelector("#live-toggle");
+const LIVE_DEBOUNCE_MS = 700;
+const LIVE_MAX_CHARS = 20000;
+let liveMode = false;
+let liveTimer = null;
+
+function scheduleLiveVerify() {
+  if (!liveMode) return;
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(maybeLiveVerify, LIVE_DEBOUNCE_MS);
+}
+
+async function maybeLiveVerify() {
+  if (!liveMode) return;
+  if (running || runInFlight || verifyButton.disabled) {
+    // Busy or still booting: check back shortly instead of piling up.
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(maybeLiveVerify, LIVE_DEBOUNCE_MS);
+    return;
+  }
+  const doc = editor.state.doc.toString();
+  if (!doc.trim() || doc.length > LIVE_MAX_CHARS) return;
+  await runVerification({ live: true });
+}
+
+liveToggle.addEventListener("click", () => {
+  liveMode = !liveMode;
+  liveToggle.setAttribute("aria-pressed", String(liveMode));
+  liveToggle.classList.toggle("is-active", liveMode);
+  if (liveMode) {
+    scheduleLiveVerify();
+  } else {
+    clearTimeout(liveTimer);
+  }
+});
 
 // ---------- Run (`dafny run` in the browser: verify, compile to JS, execute) ----------
 
@@ -1448,27 +1576,107 @@ jsCopyButton.addEventListener("click", async () => {
   if (!lastCompiled) return;
   const script = await buildRunnableScript();
   window.__runnableJs = script;
-  let copied = false;
+  const copied = await copyText(script);
+  const label = jsCopyButton.textContent;
+  jsCopyButton.textContent = copied ? "Copied ✓" : "Copy failed";
+  setTimeout(() => { jsCopyButton.textContent = label; }, 1600);
+});
+
+// ---------- Share (permalinks) ----------
+// The program travels in the URL fragment — never sent to any server, so
+// the "code stays in your browser" property survives sharing. deflate-raw
+// via CompressionStream (native, no dependency); raw base64url fallback for
+// engines without it (a "dfl:" link still needs DecompressionStream to open).
+
+const CANONICAL_DEMO_URL = "https://rupnikj.github.io/dafny-verify-browser/";
+const shareButton = document.querySelector("#share");
+shareButton.disabled = false; // sharing needs only the editor, not the verifier
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function base64UrlToBytes(text) {
+  const binary = atob(text.replaceAll("-", "+").replaceAll("_", "/"));
+  return Uint8Array.from(binary, ch => ch.charCodeAt(0));
+}
+
+async function encodeShareFragment(source) {
+  const bytes = new TextEncoder().encode(source);
+  if (typeof CompressionStream !== "function") {
+    return "raw:" + bytesToBase64Url(bytes);
+  }
+  const deflated = new Uint8Array(await new Response(
+    new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
+  return "dfl:" + bytesToBase64Url(deflated);
+}
+
+async function decodeShareFragment(fragment) {
+  const split = fragment.indexOf(":");
+  const format = fragment.slice(0, split);
+  const bytes = base64UrlToBytes(fragment.slice(split + 1));
+  if (format === "raw") {
+    return new TextDecoder().decode(bytes);
+  }
+  if (format !== "dfl" || typeof DecompressionStream !== "function") {
+    throw new Error("unsupported share-link format: " + format);
+  }
+  return new Response(
+    new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+}
+
+async function loadSharedCode() {
+  const match = window.location.hash.match(/^#code=([^&]+)/);
+  if (!match) return;
   try {
-    await navigator.clipboard.writeText(script);
-    copied = true;
+    const source = await decodeShareFragment(decodeURIComponent(match[1]));
+    editor.dispatch({
+      changes: { from: 0, to: editor.state.doc.length, insert: source },
+      selection: { anchor: 0 }
+    });
+    clearResultForEdit();
+    modifiedDot.classList.remove("is-visible");
+  } catch (error) {
+    console.warn("could not load the shared program from the URL:", error);
+  }
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
   } catch {
-    // Clipboard API can be unavailable (permissions, sandboxes) — fall back
-    // to the selection-based path.
     try {
       const holder = document.createElement("textarea");
-      holder.value = script;
+      holder.value = text;
       holder.style.position = "fixed";
       holder.style.opacity = "0";
       document.body.append(holder);
       holder.select();
-      copied = document.execCommand("copy");
+      const copied = document.execCommand("copy");
       holder.remove();
-    } catch {}
+      return copied;
+    } catch {
+      return false;
+    }
   }
-  const label = jsCopyButton.textContent;
-  jsCopyButton.textContent = copied ? "Copied ✓" : "Copy failed";
-  setTimeout(() => { jsCopyButton.textContent = label; }, 1600);
+}
+
+shareButton.addEventListener("click", async () => {
+  const fragment = await encodeShareFragment(editor.state.doc.toString());
+  // From file:// (the single-file build) a local path is useless to a
+  // recipient — point shares at the hosted demo, which runs the same app.
+  const base = /^https?:$/.test(window.location.protocol)
+    ? window.location.origin + window.location.pathname
+    : CANONICAL_DEMO_URL;
+  const url = base + "#code=" + fragment;
+  window.__shareUrl = url;
+  const copied = await copyText(url);
+  const label = shareButton.textContent;
+  shareButton.textContent = copied ? "Link copied ✓" : "Copy failed";
+  setTimeout(() => { shareButton.textContent = label; }, 1600);
 });
 
 exampleSelect.addEventListener("change", () => {
@@ -1480,6 +1688,8 @@ exampleSelect.addEventListener("change", () => {
   });
   editor.focus();
 });
+
+loadSharedCode();
 
 verifierReady.then(() => {
   runtimeDot.className = "status-dot is-ready";

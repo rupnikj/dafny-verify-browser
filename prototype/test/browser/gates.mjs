@@ -177,7 +177,35 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (!consoleRun.some(line => line.includes("Fib(40) = 102334155"))) {
     throw new Error("runnable script console output wrong: " + consoleRun.slice(0, 5).join(" | "));
   }
-  console.log("  run: FastFib executed, output verified; JS tab + runnable copy verified");
+  // SMT tab: the transcript of the last verification, rendered as SMT-LIB.
+  await page.click("#smt-tab");
+  await page.waitForSelector("#smt-view .cm-editor", { timeout: 30000 });
+  const smtText = await page.evaluate(() => window.__smtText ?? "");
+  if (!smtText.includes("(check-sat)") || !smtText.includes("proof obligation")) {
+    throw new Error("SMT transcript missing expected content (len " + smtText.length + ")");
+  }
+  // Share: the permalink reopens the exact program in a fresh page load.
+  await page.click("#share");
+  await page.waitForFunction(() => typeof window.__shareUrl === "string", undefined, { timeout: 10000 });
+  const shareUrl = await page.evaluate(() => window.__shareUrl);
+  if (!shareUrl.includes("#code=dfl:")) {
+    throw new Error("share URL malformed: " + shareUrl.slice(0, 120));
+  }
+  await page.goto(shareUrl, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    () => document.querySelector("#runtime-label")?.textContent === "Verifier ready",
+    undefined, { timeout: BOOT_TIMEOUT });
+  const restored = await page.locator("#editor .cm-content").textContent();
+  if (!restored.includes("FastFib")) {
+    throw new Error("shared program not restored from the URL fragment");
+  }
+  // Live mode: an edit re-verifies automatically — no Verify click.
+  await page.click("#live-toggle");
+  await page.click("#editor .cm-content");
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\nmethod Broken() ensures false {}");
+  await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
+  console.log("  run/JS/copy, SMT transcript, share permalink, live mode: all verified");
 }, { retries: 1 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero

@@ -13,6 +13,11 @@ an interactive **Tutorial** tab: the classic Dafny guide (formerly on
 rise4fun) with 150+ runnable examples verified in-browser, plus
 counterexample traces on failing programs — and a **Run** button that
 verifies, compiles to JavaScript, and executes `Main` right on the page.
+Also aboard: **Share** links that carry the program in the URL fragment
+(never sent to a server — it verifies live in the recipient's browser),
+a **Live** mode that re-verifies as you type, a **JS** tab showing what
+the verified program compiles to, and an **SMT** tab with the actual
+SMT-LIB conversation between Boogie and Z3.
 
 The first load downloads the whole verifier (~95 MB raw — a .NET runtime, 223
 managed assemblies, and a 33 MB Z3), so give it a moment; subsequent visits
