@@ -35,6 +35,7 @@ import { scheme } from "@codemirror/legacy-modes/mode/scheme";
 import { tags } from "@lezer/highlight";
 import { createDafny } from "./dafny-browser.js";
 import { runCompiled } from "./dafny-runner.js";
+import { encodeShareFragment, decodeShareFragment, shareFragmentFrom } from "./share-codec.js";
 
 const examples = {
   abs: [
@@ -1582,56 +1583,28 @@ jsCopyButton.addEventListener("click", async () => {
   setTimeout(() => { jsCopyButton.textContent = label; }, 1600);
 });
 
-// ---------- Share (permalinks) ----------
-// The program travels in the URL fragment — never sent to any server, so
-// the "code stays in your browser" property survives sharing. deflate-raw
-// via CompressionStream (native, no dependency); raw base64url fallback for
-// engines without it (a "dfl:" link still needs DecompressionStream to open).
+// ---------- Share (permalinks) and Embed ----------
+// Codec in src/share-codec.js — shared with the embeddable widget.
 
 const CANONICAL_DEMO_URL = "https://rupnikj.github.io/dafny-verify-browser/";
 const shareButton = document.querySelector("#share");
+const embedButton = document.querySelector("#embed");
 shareButton.disabled = false; // sharing needs only the editor, not the verifier
+embedButton.disabled = false;
 
-function bytesToBase64Url(bytes) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
-
-function base64UrlToBytes(text) {
-  const binary = atob(text.replaceAll("-", "+").replaceAll("_", "/"));
-  return Uint8Array.from(binary, ch => ch.charCodeAt(0));
-}
-
-async function encodeShareFragment(source) {
-  const bytes = new TextEncoder().encode(source);
-  if (typeof CompressionStream !== "function") {
-    return "raw:" + bytesToBase64Url(bytes);
-  }
-  const deflated = new Uint8Array(await new Response(
-    new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
-  return "dfl:" + bytesToBase64Url(deflated);
-}
-
-async function decodeShareFragment(fragment) {
-  const split = fragment.indexOf(":");
-  const format = fragment.slice(0, split);
-  const bytes = base64UrlToBytes(fragment.slice(split + 1));
-  if (format === "raw") {
-    return new TextDecoder().decode(bytes);
-  }
-  if (format !== "dfl" || typeof DecompressionStream !== "function") {
-    throw new Error("unsupported share-link format: " + format);
-  }
-  return new Response(
-    new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+// From file:// (the single-file build) a local path is useless to a
+// recipient — point shares at the hosted demo, which runs the same app.
+function shareBaseUrl() {
+  return /^https?:$/.test(window.location.protocol)
+    ? new URL("./", window.location.href).href
+    : CANONICAL_DEMO_URL;
 }
 
 async function loadSharedCode() {
-  const match = window.location.hash.match(/^#code=([^&]+)/);
-  if (!match) return;
+  const fragment = shareFragmentFrom(window.location.hash);
+  if (!fragment) return;
   try {
-    const source = await decodeShareFragment(decodeURIComponent(match[1]));
+    const source = await decodeShareFragment(fragment);
     editor.dispatch({
       changes: { from: 0, to: editor.state.doc.length, insert: source },
       selection: { anchor: 0 }
@@ -1666,17 +1639,24 @@ async function copyText(text) {
 
 shareButton.addEventListener("click", async () => {
   const fragment = await encodeShareFragment(editor.state.doc.toString());
-  // From file:// (the single-file build) a local path is useless to a
-  // recipient — point shares at the hosted demo, which runs the same app.
-  const base = /^https?:$/.test(window.location.protocol)
-    ? window.location.origin + window.location.pathname
-    : CANONICAL_DEMO_URL;
-  const url = base + "#code=" + fragment;
+  const url = shareBaseUrl() + "#code=" + fragment;
   window.__shareUrl = url;
   const copied = await copyText(url);
   const label = shareButton.textContent;
   shareButton.textContent = copied ? "Link copied ✓" : "Copy failed";
   setTimeout(() => { shareButton.textContent = label; }, 1600);
+});
+
+embedButton.addEventListener("click", async () => {
+  const fragment = await encodeShareFragment(editor.state.doc.toString());
+  const snippet = `<iframe src="${shareBaseUrl()}embed.html#code=${fragment}"\n` +
+    `  style="width: 100%; height: 420px; border: 1px solid #30363d; border-radius: 8px"\n` +
+    `  loading="lazy" title="Dafny Verify"></iframe>`;
+  window.__embedSnippet = snippet;
+  const copied = await copyText(snippet);
+  const label = embedButton.textContent;
+  embedButton.textContent = copied ? "Snippet copied ✓" : "Copy failed";
+  setTimeout(() => { embedButton.textContent = label; }, 1600);
 });
 
 exampleSelect.addEventListener("change", () => {

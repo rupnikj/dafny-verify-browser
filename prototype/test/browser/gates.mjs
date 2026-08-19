@@ -5,9 +5,10 @@
 //
 // Usage: node test/browser/gates.mjs  (spawns server.mjs on a scratch port)
 import { spawn } from "node:child_process";
-import { copyFile, access, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { copyFile, mkdir, access, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { deflateRawSync } from "node:zlib";
 import { chromium } from "playwright";
 
 const prototypeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -38,10 +39,30 @@ if (withSingleFile) {
   console.log("note: dist/dafny-verify.html not built — skipping the single-file gate");
 }
 
+// Embed fallback assets: without COOP/COEP the worker needs z3-st (staged
+// the way the deploy workflow stages it).
+const withZ3St = !!process.env.Z3_ST_DIR;
+if (withZ3St) {
+  await mkdir(resolve(prototypeRoot, "dist/wwwroot/z3-st"), { recursive: true });
+  for (const name of ["z3-st.js", "z3-st.wasm"]) {
+    await copyFile(join(process.env.Z3_ST_DIR, name), resolve(prototypeRoot, "dist/wwwroot/z3-st", name));
+  }
+} else {
+  console.log("note: Z3_ST_DIR not set — skipping the embed (no-COI fallback) gate");
+}
+
 const server = spawn(process.execPath, [resolve(prototypeRoot, "server.mjs")], {
   env: { ...process.env, PORT: String(port) },
   stdio: "ignore"
 });
+// A second server WITHOUT COOP/COEP headers: the embed's real-world
+// situation (third-party iframes are never cross-origin isolated).
+const noCoiServer = withZ3St
+  ? spawn(process.execPath, [resolve(prototypeRoot, "server.mjs")], {
+      env: { ...process.env, PORT: String(port + 1), DAFNY_DEV_NO_COI: "1" },
+      stdio: "ignore"
+    })
+  : null;
 for (let attempt = 0; ; attempt++) {
   try {
     await fetch(base + "/index.html", { method: "HEAD" });
@@ -324,8 +345,38 @@ if (withSingleFile) {
   });
 }
 
+// Embed widget on a host with NO COOP/COEP headers: the page cannot be
+// cross-origin isolated, so a passing verdict proves the worker's
+// single-threaded z3-st fallback end to end — the exact situation of an
+// iframe embed on a third-party site.
+if (withZ3St) {
+  const embedProgram = "method Double(x: nat) returns (r: nat)\n  ensures r == 2 * x\n{\n  r := x + x;\n}\n";
+  const embedFragment = "dfl:" + deflateRawSync(Buffer.from(embedProgram)).toString("base64url");
+  await gate("embed: no-COI page verifies via the single-threaded fallback", async page => {
+    await page.goto(`http://localhost:${port + 1}/embed.html#code=${embedFragment}`,
+      { waitUntil: "domcontentloaded" });
+    const restored = await page.inputValue("#source");
+    if (!restored.includes("method Double")) {
+      throw new Error("embed did not restore the program from the fragment");
+    }
+    if (await page.evaluate(() => crossOriginIsolated)) {
+      throw new Error("embed test server unexpectedly cross-origin isolated");
+    }
+    await page.click("#verify");
+    await page.waitForFunction(
+      () => (document.querySelector("#verdict")?.textContent ?? "").length > 0,
+      undefined, { timeout: BOOT_TIMEOUT });
+    const verdictClass = await page.locator("#verdict").getAttribute("class");
+    if (verdictClass !== "ok") {
+      throw new Error("embed verdict: " + await page.locator("#verdict").textContent() +
+        " | status: " + await page.locator("#status").textContent());
+    }
+  });
+}
+
 await browser.close();
 server.kill();
+noCoiServer?.kill();
 const failed = results.filter(result => !result.ok);
 console.log(failed.length === 0
   ? "\nBROWSER GATES: PASS (" + results.length + ")"

@@ -60,6 +60,30 @@ jobs:
         working-directory: prototype
         run: npm run test:wasm
 
+      # Optional by design: embed.html (third-party iframes are never
+      # cross-origin isolated) needs the single-threaded z3-st fallback.
+      # continue-on-error keeps the deploy decoupled from z3-inline — if this
+      # fails, the threaded demo still deploys and only the embed fallback is
+      # absent.
+      - name: Stage single-threaded Z3 for the embed/no-COI fallback (optional)
+        continue-on-error: true
+        env:
+          Z3_INLINE_TAG: v0.3.0
+        run: |
+          mkdir -p prototype/dist/wwwroot/z3-st
+          base="https://github.com/rupnikj/z3-inline/releases/download/$Z3_INLINE_TAG"
+          curl -fL -o prototype/dist/wwwroot/z3-st/z3-st.js "$base/z3-st.js"
+          curl -fL -o prototype/dist/wwwroot/z3-st/z3-st.wasm "$base/z3-st.wasm"
+          curl -fL -o /tmp/z3-st-build-info.json "$base/build-info.json"
+          expected=$(python3 -c "import json; print(json.load(open('/tmp/z3-st-build-info.json'))['wasmSha256'])")
+          actual=$(sha256sum prototype/dist/wwwroot/z3-st/z3-st.wasm | cut -d' ' -f1)
+          if [ "$expected" != "$actual" ]; then
+            rm -rf prototype/dist/wwwroot/z3-st
+            echo "z3-st hash mismatch — embed fallback not staged"
+            exit 1
+          fi
+          echo "z3-st $Z3_INLINE_TAG staged for the embed fallback: $actual"
+
       - name: Prepare Pages artifact
         run: touch prototype/dist/wwwroot/.nojekyll
 

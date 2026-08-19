@@ -21,9 +21,14 @@ const contentTypes = new Map([
 ]);
 
 createServer(async (request, response) => {
-  response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-  response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-  response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  // DAFNY_DEV_NO_COI simulates a host that cannot send COOP/COEP (a
+  // third-party iframe embed, a plain static host): the worker must fall
+  // back to the single-threaded solver. Used by the embed browser gate.
+  if (!process.env.DAFNY_DEV_NO_COI) {
+    response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+    response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  }
 
   const url = new URL(request.url ?? "/", "http://localhost");
   const relative = normalize(decodeURIComponent(url.pathname)).replace(/^[/\\]+/, "");

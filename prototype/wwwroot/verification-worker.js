@@ -66,18 +66,10 @@ function loadBootResource(type, name, defaultUri) {
   return fetchCounted(defaultUri);
 }
 
-async function start() {
-  if (!crossOriginIsolated) {
-    throw new Error(
-      "Z3 WASM needs SharedArrayBuffer. Serve this page with COOP: same-origin and COEP: require-corp."
-    );
-  }
-
-  const [{ init }, { dotnet }] = await Promise.all([
-    import("./z3-api.js"),
-    import("./_framework/dotnet.js")
-  ]);
-
+// The threaded z3-solver build: fastest, but SharedArrayBuffer requires a
+// cross-origin-isolated page (COOP+COEP).
+async function startThreadedSolver() {
+  const { init } = await import("./z3-api.js");
   // Download the Z3 WASM once with a counted fetch and hand the bytes to
   // Emscripten directly: the z3-solver 4.16 glue's pthread bootstrap resolves
   // the wasm against the page root (ignoring locateFile), so relying on a
@@ -93,13 +85,8 @@ async function start() {
     locateFile: file => new URL(`./z3/${file}`, self.location.href).href,
     mainScriptUrlOrBlob: z3MainScript
   });
-
-  reportProgress("Downloading Dafny + Boogie assemblies");
-  const dotnetBuilder = typeof dotnet.withResourceLoader === "function"
-    ? dotnet.withResourceLoader(loadBootResource)
-    : dotnet;
-  const runtime = await dotnetBuilder.create();
-  runtime.setModuleImports("dafnyZ3", {
+  return {
+    name: "z3-threaded",
     evaluate: async (solverId, smtLib) => {
       let context = contexts.get(solverId);
       if (!context) {
@@ -117,7 +104,90 @@ async function start() {
         contexts.delete(solverId);
       }
     }
-  });
+  };
+}
+
+// The single-threaded z3-st build (from z3-inline releases, staged under
+// ./z3-st/): no SharedArrayBuffer, so it works without COOP/COEP — which is
+// exactly the situation of embed.html inside a third-party iframe, where the
+// embedding page would have to be cross-origin isolated itself. Same Dafny,
+// same Boogie, same SMT bytes; just slower. Mirrors src/z3-api-transport.js,
+// including its hard-won rule: NEVER throw on Z3 error codes — an
+// (error "...") response is protocol text Boogie parses and handles, the code
+// clears on the next call, and the context stays usable.
+async function startSingleThreadedSolver() {
+  reportProgress("Downloading Z3 solver (single-threaded)");
+  const wasmUrl = new URL("./z3-st/z3-st.wasm", self.location.href).href;
+  const wasmResponse = await fetchCounted(wasmUrl);
+  if (!wasmResponse.ok) {
+    throw new Error(
+      "This page is not cross-origin isolated (no SharedArrayBuffer for threaded Z3) " +
+      "and the single-threaded fallback assets are missing (" + wasmUrl + " → HTTP " +
+      wasmResponse.status + "). Serve COOP/COEP headers, or stage z3-st.js/z3-st.wasm under z3-st/."
+    );
+  }
+  const wasmBytes = new Uint8Array(await wasmResponse.arrayBuffer());
+  importScripts(new URL("./z3-st/z3-st.js", self.location.href).href);
+  const factory = typeof createZ3 !== "undefined" ? createZ3 : self.createZ3;
+  reportProgress("Starting Z3 (single-threaded)");
+  const z3 = await factory({ wasmBinary: wasmBytes, print: () => {}, printErr: () => {} });
+  const api = {
+    mkConfig: z3.cwrap("Z3_mk_config", "number", []),
+    mkContext: z3.cwrap("Z3_mk_context", "number", ["number"]),
+    delConfig: z3.cwrap("Z3_del_config", null, ["number"]),
+    delContext: z3.cwrap("Z3_del_context", null, ["number"]),
+    setHandler: z3.cwrap("Z3_set_error_handler", null, ["number", "number"]),
+    evalSmtlib: z3.cwrap("Z3_eval_smtlib2_string", "string", ["number", "string"]),
+    errorCode: z3.cwrap("Z3_get_error_code", "number", ["number"]),
+    errorMsg: z3.cwrap("Z3_get_error_msg", "string", ["number", "number"])
+  };
+  const sessions = new Map();
+  return {
+    name: "z3-st-api",
+    evaluate: async (solverId, smtLib) => {
+      let session = sessions.get(solverId);
+      if (!session) {
+        const cfg = api.mkConfig();
+        const ctx = api.mkContext(cfg);
+        // NULL handler: eval errors set a code instead of exit(1).
+        api.setHandler(ctx, 0);
+        session = { cfg, ctx };
+        sessions.set(solverId, session);
+      }
+      const output = api.evalSmtlib(session.ctx, smtLib);
+      if (output) {
+        return output;
+      }
+      const code = api.errorCode(session.ctx);
+      if (code !== 0) {
+        const message = (api.errorMsg(session.ctx, code) ?? "unknown").replace(/"/g, "'");
+        return `(error "z3 error ${code}: ${message}")\n`;
+      }
+      return "";
+    },
+    close: solverId => {
+      const session = sessions.get(solverId);
+      sessions.delete(solverId);
+      if (session) {
+        try { api.delContext(session.ctx); } finally { api.delConfig(session.cfg); }
+      }
+    }
+  };
+}
+
+async function start() {
+  const dotnetModulePromise = import("./_framework/dotnet.js");
+  const solver = crossOriginIsolated
+    ? await startThreadedSolver()
+    : await startSingleThreadedSolver();
+  const { dotnet } = await dotnetModulePromise;
+
+  reportProgress("Downloading Dafny + Boogie assemblies");
+  const dotnetBuilder = typeof dotnet.withResourceLoader === "function"
+    ? dotnet.withResourceLoader(loadBootResource)
+    : dotnet;
+  const runtime = await dotnetBuilder.create();
+  runtime.setModuleImports("dafnyZ3", { evaluate: solver.evaluate, close: solver.close });
 
   reportProgress("Starting the Dafny pipeline");
   const config = runtime.getConfig();

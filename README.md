@@ -111,6 +111,31 @@ string-building path; the JS runtime rides as an embedded resource (upstream
 keeps it in `DafnyPipeline.dll`, which also carries every other target's
 runtime — shipping one file instead keeps the payload lean).
 
+## Embedding a verifiable snippet in a blog or course page
+
+The demo's **Embed** button copies an iframe snippet like:
+
+```html
+<iframe src="https://rupnikj.github.io/dafny-verify-browser/embed.html#code=dfl:..."
+  style="width: 100%; height: 420px; border: 1px solid #30363d; border-radius: 8px"
+  loading="lazy" title="Dafny Verify"></iframe>
+```
+
+`embed.html` is a compact widget: the program arrives in the URL fragment
+(same codec as Share links — it never touches a server), readers can edit
+it, and the verifier boots lazily on the first Verify click, so embeds cost
+visitors nothing until used. An "Edit in Dafny Verify ↗" link carries the
+current text to the full demo.
+
+A third-party iframe can never be cross-origin isolated (that would require
+COOP/COEP on the *embedding* page), so no `SharedArrayBuffer` and no
+threaded Z3. The verification worker therefore falls back to the
+single-threaded [z3-inline](https://github.com/rupnikj/z3-inline) build —
+same Dafny, same Boogie, same SMT bytes, just slower — staged at `z3-st/`
+by an optional deploy step that never blocks the threaded tier. The
+fallback also makes the whole demo work on hosts that cannot send
+COOP/COEP headers at all.
+
 ## Embedding the verifier in your own page
 
 The published site doubles as a distribution. It exposes a standalone,

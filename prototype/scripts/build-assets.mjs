@@ -32,6 +32,17 @@ await build({
 });
 
 await build({
+  entryPoints: [resolve(prototypeRoot, "src/embed.js")],
+  outfile: resolve(webRoot, "embed.js"),
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+  external: ["./dafny-browser.js"],
+  sourcemap: true
+});
+
+await build({
   entryPoints: [resolve(prototypeRoot, "src/dafny-browser.js")],
   outfile: resolve(webRoot, "dafny-browser.js"),
   bundle: true,
