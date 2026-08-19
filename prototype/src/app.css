@@ -522,6 +522,16 @@ body.tutorial-on .panel {
 .empty-state p { margin: 7px 0 0; font-size: 12px; }
 
 .output-view { padding: 0; background: #12161c; }
+
+.js-view { padding: 0; background: #12161c; }
+.js-view .js-editor {
+  min-height: 100%;
+  color: #7d8896;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 13px; /* placeholder text only; zeroed once the editor mounts */
+}
+.js-view .js-editor:has(.cm-editor) { padding: 0; }
+.js-view .cm-editor { font-size: 11px; }
 .output-view pre {
   margin: 0;
   padding: 13px;

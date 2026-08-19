@@ -30,6 +30,7 @@ import {
   indentWithTab
 } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
+import { javascript } from "@codemirror/legacy-modes/mode/javascript";
 import { tags } from "@lezer/highlight";
 import { createDafny } from "./dafny-browser.js";
 import { runCompiled } from "./dafny-runner.js";
@@ -1237,21 +1238,39 @@ function loadBignumberSource() {
 
 let runInFlight = null; // { phase: "verify" | "execute", cancelExecute?: () => void }
 
-// The JS tab: what the verified program compiles to. The pedagogical payoff
-// is what's MISSING — requires/ensures/invariant/decreases all erase — so
-// say that up front. The 30 KB runtime prelude is stripped for readability
-// (the generated program starts at the "// Dafny program" banner).
+// The JS tab: what the verified program compiles to, in a read-only
+// CodeMirror. The 30 KB runtime prelude is stripped (the generated program
+// starts at the "// Dafny program" banner). CodeMirror virtualizes long
+// documents, so gates read window.__compiledJs, not the rendered DOM.
+const jsLanguage = StreamLanguage.define(javascript);
+let jsEditor = null;
+
 function showCompiledJs(compiled) {
   const marker = compiled.js.indexOf("// Dafny program");
-  const program = marker >= 0 ? compiled.js.slice(marker) : compiled.js;
-  jsOutput.textContent =
-    "// What your verified program compiles to (Dafny's official JavaScript backend).\n" +
-    "// Notice what is NOT here: requires, ensures, invariant, decreases — specs are\n" +
-    "// proof-time only and erase completely. Every int is a BigNumber: Dafny integers\n" +
-    "// are arbitrary-precision, so arithmetic never overflows.\n" +
-    "// (Stripped for readability: the 30 KB Dafny runtime prelude + bignumber.js.)\n\n" +
-    program +
-    (compiled.callToMain ? "\n// entry point\n" + compiled.callToMain : "");
+  const program = (marker >= 0 ? compiled.js.slice(marker) : compiled.js) +
+    (compiled.callToMain ? "\n" + compiled.callToMain : "");
+  window.__compiledJs = program;
+  if (!jsEditor) {
+    jsOutput.textContent = "";
+    jsEditor = new EditorView({
+      parent: jsOutput,
+      state: EditorState.create({
+        doc: "",
+        extensions: [
+          lineNumbers(),
+          highlightSpecialChars(),
+          drawSelection(),
+          search({ top: true }),
+          jsLanguage,
+          syntaxHighlighting(dafnyHighlight),
+          editorTheme,
+          EditorState.readOnly.of(true),
+          keymap.of([...defaultKeymap, ...searchKeymap])
+        ]
+      })
+    });
+  }
+  jsEditor.dispatch({ changes: { from: 0, to: jsEditor.state.doc.length, insert: program } });
 }
 
 function setRunUiState(isRunning) {

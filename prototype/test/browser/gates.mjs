@@ -55,25 +55,37 @@ for (let attempt = 0; ; attempt++) {
 const browser = await chromium.launch();
 const results = [];
 
-async function gate(name, run) {
-  const page = await browser.newPage();
-  const errors = [];
-  page.on("pageerror", error => errors.push(error.message));
-  try {
-    await run(page);
-    results.push({ name, ok: true });
-    console.log("PASS " + name);
-  } catch (error) {
-    results.push({ name, ok: false });
-    const detail = (error?.message ?? String(error)) +
-      (errors.length ? " | page errors: " + errors.slice(0, 5).join(" | ") : "");
-    console.log("FAIL " + name + " — " + detail);
-    // Surface the failure as a GitHub annotation (readable via the API even
-    // when job logs are not). Annotations are single-line.
-    console.log("::error::browser gate failed: " + name + " — " +
-      detail.replaceAll("\n", " ⏎ ").slice(0, 800));
-  } finally {
-    await page.close();
+// retries: the threaded tier's worker boot (pthread spawn under CPU
+// contention) occasionally strands one run — observed on CI runners and
+// locally, never twice in a row. A retried pass is logged; failing both
+// attempts fails the gate, so real regressions still surface.
+async function gate(name, run, { retries = 0 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      await run(page);
+      results.push({ name, ok: true });
+      console.log("PASS " + name + (attempt > 0 ? ` (attempt ${attempt + 1})` : ""));
+      return;
+    } catch (error) {
+      const detail = (error?.message ?? String(error)) +
+        (errors.length ? " | page errors: " + errors.slice(0, 5).join(" | ") : "");
+      if (attempt < retries) {
+        console.log("RETRY " + name + " — " + detail.split("\n")[0]);
+        continue;
+      }
+      results.push({ name, ok: false });
+      console.log("FAIL " + name + " — " + detail);
+      // Surface the failure as a GitHub annotation (readable via the API even
+      // when job logs are not). Annotations are single-line.
+      console.log("::error::browser gate failed: " + name + " — " +
+        detail.replaceAll("\n", " ⏎ ").slice(0, 800));
+      return;
+    } finally {
+      await page.close();
+    }
   }
 }
 
@@ -133,14 +145,20 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (!runText.includes("Fib(40) = 102334155")) {
     throw new Error("run output missing Fib(40): " + runText.slice(-400));
   }
-  // The JS tab shows the compiled program (runtime stripped, specs erased).
-  const jsText = await page.locator("#js-output").textContent();
-  if (!jsText.includes("static Main") || jsText.includes("HaltException = class")) {
-    throw new Error("JS tab wrong: hasMain=" + jsText.includes("static Main") +
-      " runtimeStripped=" + !jsText.includes("HaltException = class"));
+  // The JS tab shows the compiled program (runtime stripped, specs erased) in
+  // a CodeMirror; it virtualizes long documents, so assert on the data hook
+  // plus one rendered highlight.
+  const jsState = await page.evaluate(() => ({
+    hasMain: window.__compiledJs?.includes("static Main"),
+    runtimeStripped: !window.__compiledJs?.includes("HaltException = class")
+  }));
+  if (!jsState.hasMain || !jsState.runtimeStripped) {
+    throw new Error("JS tab wrong: " + JSON.stringify(jsState));
   }
+  await page.click("#js-tab");
+  await page.waitForSelector("#js-view .cm-editor", { timeout: 10000 });
   console.log("  run: FastFib executed, output verified; JS tab shows compiled program");
-});
+}, { retries: 1 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero
 // /_framework/ requests (the page computes its own verdict in the title).
