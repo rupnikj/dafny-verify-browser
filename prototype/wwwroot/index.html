@@ -115,6 +115,8 @@
             </button>
             <button class="panel-tab" id="output-tab" type="button" role="tab" aria-selected="false">Output</button>
             <button class="panel-tab" id="run-tab" type="button" role="tab" aria-selected="false">Run</button>
+            <button class="panel-tab" id="js-tab" type="button" role="tab" aria-selected="false"
+              title="The JavaScript your verified program compiles to">JS</button>
           </div>
 
           <section class="result-summary is-idle" id="result-summary" aria-live="polite">
@@ -144,6 +146,10 @@
 
           <div class="panel-view output-view" id="run-view" role="tabpanel" aria-labelledby="run-tab" hidden>
             <pre id="run-output" class="run-output">Run a program with a Main method to see its output here.</pre>
+          </div>
+
+          <div class="panel-view output-view" id="js-view" role="tabpanel" aria-labelledby="js-tab" hidden>
+            <pre id="js-output" class="run-output">Run a program to see the JavaScript it compiles to.</pre>
           </div>
 
         </aside>

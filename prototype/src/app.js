@@ -676,6 +676,9 @@ const runLabel = document.querySelector("#run-label");
 const runTab = document.querySelector("#run-tab");
 const runView = document.querySelector("#run-view");
 const runOutput = document.querySelector("#run-output");
+const jsTab = document.querySelector("#js-tab");
+const jsView = document.querySelector("#js-view");
+const jsOutput = document.querySelector("#js-output");
 const problemCount = document.querySelector("#problem-count");
 const problemFilters = document.querySelector("#problem-filters");
 const problemsList = document.querySelector("#problems-list");
@@ -796,7 +799,8 @@ updateCursor(editor);
 const panels = {
   problems: [problemsTab, problemsView],
   output: [outputTab, outputView],
-  run: [runTab, runView]
+  run: [runTab, runView],
+  js: [jsTab, jsView]
 };
 
 function setPanel(panel) {
@@ -811,6 +815,7 @@ function setPanel(panel) {
 problemsTab.addEventListener("click", () => setPanel("problems"));
 outputTab.addEventListener("click", () => setPanel("output"));
 runTab.addEventListener("click", () => setPanel("run"));
+jsTab.addEventListener("click", () => setPanel("js"));
 
 const tutorialToggle = document.querySelector("#tutorial-toggle");
 const tutorialPane = document.querySelector("#tutorial-pane");
@@ -1232,6 +1237,23 @@ function loadBignumberSource() {
 
 let runInFlight = null; // { phase: "verify" | "execute", cancelExecute?: () => void }
 
+// The JS tab: what the verified program compiles to. The pedagogical payoff
+// is what's MISSING — requires/ensures/invariant/decreases all erase — so
+// say that up front. The 30 KB runtime prelude is stripped for readability
+// (the generated program starts at the "// Dafny program" banner).
+function showCompiledJs(compiled) {
+  const marker = compiled.js.indexOf("// Dafny program");
+  const program = marker >= 0 ? compiled.js.slice(marker) : compiled.js;
+  jsOutput.textContent =
+    "// What your verified program compiles to (Dafny's official JavaScript backend).\n" +
+    "// Notice what is NOT here: requires, ensures, invariant, decreases — specs are\n" +
+    "// proof-time only and erase completely. Every int is a BigNumber: Dafny integers\n" +
+    "// are arbitrary-precision, so arithmetic never overflows.\n" +
+    "// (Stripped for readability: the 30 KB Dafny runtime prelude + bignumber.js.)\n\n" +
+    program +
+    (compiled.callToMain ? "\n// entry point\n" + compiled.callToMain : "");
+}
+
 function setRunUiState(isRunning) {
   runLabel.textContent = isRunning ? "Stop" : "Run";
   runButton.classList.toggle("is-running", isRunning);
@@ -1297,6 +1319,7 @@ async function runProgram() {
       setPanel("problems");
       return;
     }
+    showCompiledJs(compiled);
     if (!compiled.hasMain) {
       appendRunOutput("» no Main method — nothing to execute.\n» The program verified; add `method Main() { ... }` to run it.\n");
       showRunOutcome("is-idle", "Nothing to run", "Verified, but there is no Main method.", "Run: no Main");
@@ -1308,17 +1331,24 @@ async function runProgram() {
     const timeoutMs = limitValue > 0 ? limitValue * 1000 : limitValue < 0 ? 0 : 30000;
     const bignumberSource = await loadBignumberSource();
     const startedAt = performance.now();
+    let printedAnything = false;
     const execution = runCompiled({
       program: compiled.js,
       callToMain: compiled.callToMain,
       bignumberSource,
       timeoutMs,
-      onOutput: appendRunOutput
+      onOutput: text => {
+        printedAnything = true;
+        appendRunOutput(text);
+      }
     });
     runInFlight = { phase: "execute", cancelExecute: execution.cancel };
     const result = await execution.done;
     const seconds = ((performance.now() - startedAt) / 1000).toFixed(2);
     if (result.ok) {
+      if (!printedAnything) {
+        appendRunOutput("» Main printed nothing — the JS tab shows what actually ran\n");
+      }
       appendRunOutput("\n» program finished in " + seconds + "s\n");
       showRunOutcome("is-success", "Program finished",
         "Verified, compiled, and executed in " + seconds + "s.", "Run: finished");

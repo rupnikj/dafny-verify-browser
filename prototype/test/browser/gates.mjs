@@ -133,7 +133,13 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (!runText.includes("Fib(40) = 102334155")) {
     throw new Error("run output missing Fib(40): " + runText.slice(-400));
   }
-  console.log("  run: FastFib executed, output verified");
+  // The JS tab shows the compiled program (runtime stripped, specs erased).
+  const jsText = await page.locator("#js-output").textContent();
+  if (!jsText.includes("static Main") || jsText.includes("HaltException = class")) {
+    throw new Error("JS tab wrong: hasMain=" + jsText.includes("static Main") +
+      " runtimeStripped=" + !jsText.includes("HaltException = class"));
+  }
+  console.log("  run: FastFib executed, output verified; JS tab shows compiled program");
 });
 
 // Inline tier Phase 1: .NET boots from the in-page store with zero
