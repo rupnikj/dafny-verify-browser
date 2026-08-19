@@ -946,6 +946,78 @@ jsTab.addEventListener("click", () => setPanel("js"));
 outputTab.addEventListener("click", () => setPanel("output"));
 smtTab.addEventListener("click", () => { setPanel("smt"); renderSmtTranscript(); });
 
+// ---------- Resizable dividers ----------
+// The workspace grid reserves 5px splitter tracks; dragging writes a pixel
+// value into the matching CSS variable. Double-click resets to the
+// responsive default; sizes persist per browser.
+const workspace = document.querySelector(".workspace");
+const LAYOUT_KEY = "dafny-verify-layout";
+let layoutSizes = {};
+try {
+  layoutSizes = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "{}") ?? {};
+} catch {}
+
+const LAYOUT_VARS = { panel: "--panel-col", tutorial: "--tutorial-col", panelRow: "--panel-row" };
+
+function applyLayoutSizes() {
+  for (const [key, cssVar] of Object.entries(LAYOUT_VARS)) {
+    if (layoutSizes[key] > 0) {
+      workspace.style.setProperty(cssVar, layoutSizes[key] + "px");
+    } else {
+      workspace.style.removeProperty(cssVar);
+    }
+  }
+}
+applyLayoutSizes();
+
+function saveLayoutSizes() {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layoutSizes));
+  } catch {}
+}
+
+function wireSplitter(element, getTarget) {
+  element.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    element.setPointerCapture(event.pointerId);
+    element.classList.add("is-dragging");
+    document.body.classList.add("is-resizing");
+    const bounds = workspace.getBoundingClientRect();
+    const target = getTarget();
+    const onMove = ev => {
+      const value = target.horizontal
+        ? Math.min(Math.max(bounds.bottom - ev.clientY, 120), bounds.height - 160)
+        : Math.min(Math.max(bounds.right - ev.clientX, 280), bounds.width - 380);
+      layoutSizes[target.key] = Math.round(value);
+      applyLayoutSizes();
+    };
+    const onUp = () => {
+      element.classList.remove("is-dragging");
+      document.body.classList.remove("is-resizing");
+      element.removeEventListener("pointermove", onMove);
+      element.removeEventListener("pointerup", onUp);
+      element.removeEventListener("pointercancel", onUp);
+      saveLayoutSizes();
+    };
+    element.addEventListener("pointermove", onMove);
+    element.addEventListener("pointerup", onUp);
+    element.addEventListener("pointercancel", onUp);
+  });
+  element.addEventListener("dblclick", () => {
+    delete layoutSizes[getTarget().key];
+    applyLayoutSizes();
+    saveLayoutSizes();
+  });
+}
+
+// The vertical divider resizes whichever column it borders: the panel
+// normally, the tutorial when tutorial mode has the right column.
+wireSplitter(document.querySelector("#split-main"), () =>
+  document.body.classList.contains("tutorial-on")
+    ? { key: "tutorial", horizontal: false }
+    : { key: "panel", horizontal: false });
+wireSplitter(document.querySelector("#split-panel"), () => ({ key: "panelRow", horizontal: true }));
+
 // ---------- Toolbar dropdown menus ----------
 
 const MENUS = [

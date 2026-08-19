@@ -389,20 +389,36 @@ button { color: inherit; }
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 34vw);
-  grid-template-areas: "editor panel";
+  grid-template-columns: minmax(0, 1fr) 5px var(--panel-col, minmax(300px, 34vw));
+  grid-template-areas: "editor vsplit panel";
   min-height: 0;
 }
+
+/* Draggable dividers: the grid reserves 5px tracks; JS writes --panel-col /
+   --tutorial-col / --panel-row on drag (double-click resets, persisted). */
+.splitter {
+  grid-area: vsplit;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  touch-action: none;
+}
+.splitter:hover, .splitter.is-dragging { background: var(--accent-tint); }
+.splitter-h { grid-area: hsplit; cursor: row-resize; display: none; }
+body.tutorial-on .splitter-h { display: block; }
+body.is-resizing { user-select: none; }
 
 .editor-pane { grid-area: editor; }
 .panel { grid-area: panel; }
 
 body.tutorial-on .workspace {
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 40vw);
-  grid-template-rows: minmax(0, 1fr) minmax(150px, 34%);
+  grid-template-columns: minmax(0, 1fr) 5px var(--tutorial-col, minmax(360px, 40vw));
+  grid-template-rows: minmax(0, 1fr) 5px var(--panel-row, minmax(150px, 34%));
   grid-template-areas:
-    "editor tutorial"
-    "panel  tutorial";
+    "editor vsplit tutorial"
+    "hsplit vsplit tutorial"
+    "panel  vsplit tutorial";
 }
 
 body.tutorial-on .panel {

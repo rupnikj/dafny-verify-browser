@@ -141,6 +141,22 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
     undefined, { timeout: BOOT_TIMEOUT });
   await page.click("#verify");
   await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
+  // The divider between editor and panel drags (and persists via storage,
+  // which is cleared here so later pages in this context start default).
+  const panelBefore = await page.evaluate(() =>
+    document.querySelector(".panel").getBoundingClientRect().width);
+  const splitterBox = await page.locator("#split-main").boundingBox();
+  await page.mouse.move(splitterBox.x + 2, splitterBox.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(splitterBox.x - 150, splitterBox.y + 200, { steps: 4 });
+  await page.mouse.up();
+  const panelAfter = await page.evaluate(() =>
+    document.querySelector(".panel").getBoundingClientRect().width);
+  if (panelAfter - panelBefore < 100) {
+    throw new Error(`divider drag did not widen the panel: ${panelBefore} -> ${panelAfter}`);
+  }
+  await page.dblclick("#split-main");
+  await page.evaluate(() => localStorage.removeItem("dafny-verify-layout"));
   await pickExample(page, "bad");
   await page.click("#verify");
   await page.waitForSelector(".result-summary.is-error", { timeout: BOOT_TIMEOUT });
