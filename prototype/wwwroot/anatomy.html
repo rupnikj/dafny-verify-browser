@@ -57,7 +57,8 @@ button {
 }
 button:disabled { opacity: .55; cursor: wait; }
 #status { color: var(--muted); font-size: 13px; margin-left: 12px; }
-#obligation-row label { color: var(--muted); font-size: 13.5px; margin-left: 12px; cursor: pointer; white-space: nowrap; }
+#obligation-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+#obligation-row label { color: var(--muted); font-size: 13.5px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 #obligation-row input { accent-color: var(--accent-strong); }
 #obligation-pick {
   font: 14px inherit; color: var(--text); background: var(--panel);
@@ -154,8 +155,8 @@ button:disabled { opacity: .55; cursor: wait; }
   <code>(assert (not …))</code>. Real variable names survive
   (<code>x#0</code>, <code>y#0@1</code> — the <code>@1</code> counts
   assignments), and <code>ControlFlow</code> encodes which path is taken:</p>
-  <p id="obligation-row" hidden>Each obligation is checked in its own solver
-  session; pick which one to inspect:
+  <p id="obligation-row" hidden>
+  <span>Each obligation is checked in its own solver session — pick one:</span>
   <select id="obligation-pick"></select>
   <label title="One obligation per assertion (dafny verify --isolate-assertions) instead of one per method — smaller formulas, more of them.">
     <input type="checkbox" id="anatomy-isolate"> isolate assertions</label></p>
