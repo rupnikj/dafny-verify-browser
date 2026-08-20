@@ -205,6 +205,18 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   await page.waitForFunction(
     () => document.querySelector("#run-output")?.textContent.includes("Fib(40) = 102334155"),
     undefined, { timeout: BOOT_TIMEOUT });
+  // The second runnable example: verified insertion sort, array printed
+  // before and after.
+  await pickExample(page, "sort");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.querySelector("#run-output")?.textContent.includes("after:  [3, 4, 5, 9, 15, 26, 31]"),
+    undefined, { timeout: BOOT_TIMEOUT });
+  await pickExample(page, "fastfib");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.querySelector("#run-output")?.textContent.includes("Fib(40) = 102334155"),
+    undefined, { timeout: BOOT_TIMEOUT });
   // The JS tab shows the compiled program (runtime stripped, specs erased) in
   // a CodeMirror; it virtualizes long documents, so assert on the data hook
   // plus one rendered highlight.
