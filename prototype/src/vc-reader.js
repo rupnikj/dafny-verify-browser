@@ -58,12 +58,25 @@ export function parse(tokens) {
 const SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
 const subscript = digits => [...digits].map(d => SUBSCRIPTS[Number(d)] ?? d).join("");
 
+const PRIMES = ["′", "″", "‴", "⁗"];
+
 export function prettyName(raw) {
   let name = raw.startsWith("|") && raw.endsWith("|") ? raw.slice(1, -1) : raw;
-  // Boogie's uniquifier doubles the @; fold it into the same version idea.
-  name = name.replace(/@@/g, "@");
   // The default module's qualifier carries no information.
   if (name.startsWith("_module.__default.")) name = name.slice("_module.__default.".length);
+  // @@N is Boogie's alpha-freshening of a reused bound-variable name — a
+  // fresh binder, NOT an SSA incarnation — so it gets primes, not a version
+  // subscript. Normalized-mode $generated@@N are plain symbol indices; those
+  // read better as subscripts.
+  const fresh = name.match(/^(.*?)(#(\d+))?@@(\d+)$/);
+  if (fresh && fresh[1] !== "$generated" && fresh[1].length > 0) {
+    const hash = fresh[3];
+    const count = Number(fresh[4]);
+    const marks = PRIMES[count] ??
+      "′" + [...String(count)].map(d => "⁰¹²³⁴⁵⁶⁷⁸⁹"[Number(d)]).join("");
+    return fresh[1] + (hash && hash !== "0" ? "#" + hash : "") + marks;
+  }
+  name = name.replace(/@@/g, "@");
   // Dafny convention: name#k is the k-th distinct variable of that name
   // (#0 is the common case and drops), @v is the SSA version.
   const match = name.match(/^(.*?)(#(\d+))?(@(\d+))?$/);
@@ -123,20 +136,19 @@ export function simplify(node, counter = { eliminated: 0 }) {
     // annotation node: if the body simplified to a constant, drop the wrapper
     if (!Array.isArray(rest[0])) return rest[0];
   }
-  // Literal markers (Lit exists only to steer triggering) and round-trip
-  // box coercions are notation, not content.
+  // Literal markers (Lit exists only to steer triggering) and boxing are
+  // collapsed — type-correct by construction in Dafny's encoding, so this
+  // is notation, not content.
   if ((head === "LitInt" || head === "LitReal") && rest.length === 1) return rest[0];
   if (head === "Lit" && rest.length >= 1) return rest[rest.length - 1];
-  const inverse = COERCION_INVERSE[head];
-  if (inverse && Array.isArray(rest[0]) && rest[0][0] === inverse) return rest[0][1];
+  if (BOX_COERCIONS.has(head) && rest.length === 1) return rest[0];
+  if ((head === "$Box" || head === "$Unbox") && rest.length >= 1) return rest[rest.length - 1];
   return node;
 }
 
-const COERCION_INVERSE = {
-  U_2_bool: "bool_2_U", bool_2_U: "U_2_bool",
-  U_2_int: "int_2_U", int_2_U: "U_2_int",
-  U_2_real: "real_2_U", real_2_U: "U_2_real"
-};
+const BOX_COERCIONS = new Set([
+  "U_2_bool", "bool_2_U", "U_2_int", "int_2_U", "U_2_real", "real_2_U"
+]);
 
 // ---------- infix printing ----------
 
@@ -162,6 +174,15 @@ const OPERATORS = {
   "Div": { symbol: "div", precedence: 6 },
   "Mod": { symbol: "mod", precedence: 6 }
 };
+
+// In index position, IndexField/MultiIndexField wrappers (array cell → heap
+// field) reduce to the indices themselves.
+function printIndexKey(key) {
+  if (Array.isArray(key) && (key[0] === "IndexField" || key[0] === "MultiIndexField")) {
+    return key.slice(1).map(part => print(part, 0)).join(", ");
+  }
+  return print(key, 0);
+}
 
 export function print(node, contextPrecedence = 0) {
   if (!Array.isArray(node)) return prettyName(node);
@@ -215,18 +236,15 @@ export function print(node, contextPrecedence = 0) {
       const arity = Number(select[1]) + 1;
       const map = rest[rest.length - arity - 1];
       const keys = rest.slice(rest.length - arity);
-      return print(map, 7) + "[" + keys.map(key => print(key, 0)).join(", ") + "]";
+      return print(map, 7) + "[" + keys.map(printIndexKey).join(", ") + "]";
     }
     const store = head.match(/^MapType(\d+)Store$/);
     if (store && rest.length === 2 * Number(store[1]) + 5) {
       const arity = Number(store[1]) + 1;
       const map = rest[rest.length - arity - 2];
       const keys = rest.slice(rest.length - arity - 1, -1);
-      return print(map, 7) + "[" + keys.map(key => print(key, 0)).join(", ") +
+      return print(map, 7) + "[" + keys.map(printIndexKey).join(", ") +
         " := " + print(rest[rest.length - 1], 0) + "]";
-    }
-    if (head === "$Unbox" && rest.length === 2) {
-      return "$Unbox(" + print(rest[1], 0) + ")";
     }
   }
   const operator = OPERATORS[head];
@@ -321,8 +339,174 @@ export function readVc(vcExchangeText) {
     final: print(finalNode, 0),
     inlined,
     fullyInlined,
-    eliminatedControlFlow: counter.eliminated
+    eliminatedControlFlow: counter.eliminated,
+    // The ASTs, for the skeleton and the path-simplified pass.
+    nodes: {
+      bindings: bindings.map(({ name, value }) => [name, value]),
+      final: finalNode,
+      inlined: inlinedNode
+    }
   };
+}
+
+// ---------- the skeleton: the obligation's shape, story first ----------
+
+const WELLFORMEDNESS_HEADS = new Set(["$IsGoodHeap", "$IsHeapAnchor", "$Is", "$IsAlloc"]);
+
+const conjunctsOf = node =>
+  Array.isArray(node) && node[0] === "and"
+    ? node.slice(1).flatMap(conjunctsOf)
+    : [node];
+
+/** Follow the definition chain from F, collecting hypotheses in path order:
+ * type/heap wellformedness is "given", everything else "assume", and the
+ * first non-implication left standing is "prove". Purely structural. */
+export function vcSkeleton(reading) {
+  if (!reading?.nodes) return null;
+  const definitions = new Map(reading.nodes.bindings);
+  const rows = [];
+  let node = reading.nodes.final;
+  let steps = 0;
+  while (steps++ < 64) {
+    if (typeof node === "string" && definitions.has(node)) {
+      node = definitions.get(node);
+      continue;
+    }
+    if (Array.isArray(node) && node[0] === "=>") {
+      for (const hypothesis of node.slice(1, -1)) {
+        for (const conjunct of conjunctsOf(hypothesis)) {
+          const head = Array.isArray(conjunct) ? conjunct[0] : null;
+          rows.push([WELLFORMEDNESS_HEADS.has(head) ? "given" : "assume", conjunct]);
+        }
+      }
+      node = node[node.length - 1];
+      continue;
+    }
+    break;
+  }
+  const lines = [";; the shape of F — hypotheses in chain order, then the goal:"];
+  for (const [label, conjunct] of rows) {
+    lines.push(breakFormula(print(conjunct, 0), "        ").replace(/^ {8}/, (label + ":").padEnd(8)));
+  }
+  const goal = print(node, 0);
+  lines.push(breakFormula(goal, "        ").replace(/^ {8}/, "prove:  "));
+  if (goal.includes("_correct")) {
+    lines.push(";; (block names are defined in the full form below)");
+  }
+  return lines.join("\n");
+}
+
+// ---------- pass 2: simplified under path assumptions ----------
+
+/** NOT the raw VC: guards already assumed on the path discharge, duplicate
+ * hypotheses and syntactic tautologies drop, frame/heap-succession
+ * hypotheses are elided (counted). Semantics-preserving under the path,
+ * clearly labeled as such by the formatter. */
+const EQUALITY_HEADS = new Set([
+  "=", "MultiSet#Equal", "Seq#Equal", "Set#Equal", "ISet#Equal", "Map#Equal", "IMap#Equal"
+]);
+
+export function pathSimplified(reading) {
+  if (!reading?.nodes) return null;
+  const counters = { discharged: 0, duplicates: 0, tautologies: 0, frames: 0 };
+  // Keys are alpha-normalized: Boogie re-emits the same quantifier with
+  // freshened bound names constantly, and those must compare equal.
+  const keyOf = node => {
+    let counter = 0;
+    const rename = (n, env) => {
+      if (!Array.isArray(n)) return env.get(n) ?? n;
+      const [head] = n;
+      if (head === "forall" || head === "exists" || head === "lambda") {
+        const inner = new Map(env);
+        const variables = (n[1] ?? []).map(pair => {
+          const bound = Array.isArray(pair) ? pair[0] : pair;
+          const canonical = "?" + counter++;
+          inner.set(bound, canonical);
+          return Array.isArray(pair) ? [canonical, pair[1]] : canonical;
+        });
+        return [head, variables, ...n.slice(2).map(child => rename(child, inner))];
+      }
+      return n.map(child => rename(child, env));
+    };
+    return print(rename(node, new Map()), 0);
+  };
+  // Prelude names containing # arrive |piped| — compare heads unpiped.
+  const headOf = node => typeof node[0] === "string" &&
+    node[0].startsWith("|") && node[0].endsWith("|")
+      ? node[0].slice(1, -1) : node[0];
+  const isFrame = node => Array.isArray(node) &&
+    (headOf(node) === "$HeapSucc" ||
+      (node[0] === "forall" && /\$_ModifiesFrame|\[alloc\]/.test(print(node, 0))));
+  const isTautology = node => Array.isArray(node) && EQUALITY_HEADS.has(headOf(node)) &&
+    node.length === 3 && keyOf(node[1]) === keyOf(node[2]);
+
+  function walk(node, context) {
+    if (!Array.isArray(node)) {
+      if (context.has(node)) { counters.discharged++; return "true"; }
+      return node;
+    }
+    // A syntactic tautology is valid, so it may drop in any boolean position
+    // (hypothesis, conjunct, or goal).
+    if (isTautology(node)) { counters.tautologies++; return "true"; }
+    const [head] = node;
+    if (head === "=>") {
+      const inner = new Set(context);
+      const hypotheses = [];
+      for (const hypothesis of node.slice(1, -1)) {
+        for (const conjunct of conjunctsOf(hypothesis)) {
+          if (isTautology(conjunct)) { counters.tautologies++; continue; }
+          if (isFrame(conjunct)) { counters.frames++; continue; }
+          const walked = walk(conjunct, inner);
+          if (walked === "true") continue;
+          const key = keyOf(walked);
+          if (inner.has(key)) { counters.duplicates++; continue; }
+          inner.add(key);
+          if (typeof walked === "string") inner.add(walked);
+          hypotheses.push(walked);
+        }
+      }
+      const body = walk(node[node.length - 1], inner);
+      return simplify(["=>", ...hypotheses, body]);
+    }
+    if (head === "and") {
+      // Conjuncts may assume earlier conjuncts (P ∧ Q ≡ P ∧ (Q with P
+      // assumed)) — this collapses Boogie's assert-then-assume chains,
+      // X ∧ (X ⟹ Y) → X ∧ Y.
+      const seen = new Set();
+      const inner = new Set(context);
+      const kept = [];
+      for (const conjunct of node.slice(1)) {
+        const walked = walk(conjunct, inner);
+        if (walked === "true") continue;
+        const key = keyOf(walked);
+        if (seen.has(key)) { counters.duplicates++; continue; }
+        if (isTautology(walked)) { counters.tautologies++; continue; }
+        seen.add(key);
+        inner.add(key);
+        if (typeof walked === "string") inner.add(walked);
+        kept.push(walked);
+      }
+      return simplify(["and", ...kept]);
+    }
+    return simplify(node.map(child => Array.isArray(child) ? walk(child, context) : child));
+  }
+
+  const result = walk(reading.nodes.inlined, new Set());
+  const lines = [];
+  lines.push(";; simplified under path assumptions — NOT the raw verification condition:");
+  lines.push(";; " + counters.discharged + " guard(s) already assumed on the path discharged, " +
+    counters.duplicates + " duplicate hypothesis(es) dropped,");
+  lines.push(";; " + counters.tautologies + " syntactic tautology(ies) x = x dropped, " +
+    counters.frames + " frame/heap-succession hypothesis(es) elided");
+  const text = print(result, 0);
+  const legend = [];
+  if (text.includes("$w$loop")) legend.push("$w$loop = “loop body reached” flag");
+  if (text.includes("$decr")) legend.push("$decr…$loop = the decreases measure");
+  if (text.includes("$_ModifiesFrame")) legend.push("$_ModifiesFrame = the modifies frame");
+  if (legend.length > 0) lines.push(";; names: " + legend.join("; "));
+  lines.push("");
+  lines.push(breakFormula(text));
+  return lines.join("\n");
 }
 
 // ---------- layout: break wide formulas at their logical joints ----------
@@ -390,9 +574,16 @@ export function formatVcReading(reading, { normalized = false } = {}) {
   if (!reading) return ";; no goal found in this exchange";
   const lines = [];
   lines.push(";; the query asserts ¬F and asks for a model; unsat means F holds on every execution");
-  lines.push(";; notation only: prefix → infix, x#0@1 → x₁, map reads as m[k], Lit/box wrappers collapsed;");
+  lines.push(";; notation: prefix → infix; x#0@1 → x₁ (SSA incarnation); @@-freshened bound names get");
+  lines.push(";;   primes (i′ — a fresh binder, not a version); map reads as m[k]; Lit markers and");
+  lines.push(";;   boxing collapsed (type-correct by construction)");
+  lines.push(";; boolean rewrites applied (the only ones): ¬true/¬false folded; true/false units");
+  lines.push(";;   dropped from ∧ ∨ ⟹ — this is what erases the eliminated labels below");
+  lines.push(";; ⟹ is right-associative: a ⟹ b ⟹ c reads “assume a, assume b, prove c”");
   lines.push(";; " + reading.eliminatedControlFlow + " ControlFlow path labels elided " +
-    "(they number the control-flow graph so a counterexample can report its path)");
+    "(they number the control-flow graph so a counterexample");
+  lines.push(";;   can report its path; a negative target marks the assertion being checked — how a");
+  lines.push(";;   failure maps back to a source line)");
   if (normalized) {
     lines.push(";; tip: enable 'readable names' to see source-level identifiers here");
   }

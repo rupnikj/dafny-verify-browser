@@ -17237,10 +17237,18 @@ function parse(tokens) {
 }
 var SUBSCRIPTS = "\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088\u2089";
 var subscript = (digits) => [...digits].map((d) => SUBSCRIPTS[Number(d)] ?? d).join("");
+var PRIMES = ["\u2032", "\u2033", "\u2034", "\u2057"];
 function prettyName(raw) {
   let name2 = raw.startsWith("|") && raw.endsWith("|") ? raw.slice(1, -1) : raw;
-  name2 = name2.replace(/@@/g, "@");
   if (name2.startsWith("_module.__default.")) name2 = name2.slice("_module.__default.".length);
+  const fresh = name2.match(/^(.*?)(#(\d+))?@@(\d+)$/);
+  if (fresh && fresh[1] !== "$generated" && fresh[1].length > 0) {
+    const hash = fresh[3];
+    const count = Number(fresh[4]);
+    const marks2 = PRIMES[count] ?? "\u2032" + [...String(count)].map((d) => "\u2070\xB9\xB2\xB3\u2074\u2075\u2076\u2077\u2078\u2079"[Number(d)]).join("");
+    return fresh[1] + (hash && hash !== "0" ? "#" + hash : "") + marks2;
+  }
+  name2 = name2.replace(/@@/g, "@");
   const match = name2.match(/^(.*?)(#(\d+))?(@(\d+))?$/);
   if (match && (match[2] || match[4])) {
     const base2 = match[1];
@@ -17291,18 +17299,18 @@ function simplify(node, counter = { eliminated: 0 }) {
   }
   if ((head === "LitInt" || head === "LitReal") && rest.length === 1) return rest[0];
   if (head === "Lit" && rest.length >= 1) return rest[rest.length - 1];
-  const inverse = COERCION_INVERSE[head];
-  if (inverse && Array.isArray(rest[0]) && rest[0][0] === inverse) return rest[0][1];
+  if (BOX_COERCIONS.has(head) && rest.length === 1) return rest[0];
+  if ((head === "$Box" || head === "$Unbox") && rest.length >= 1) return rest[rest.length - 1];
   return node;
 }
-var COERCION_INVERSE = {
-  U_2_bool: "bool_2_U",
-  bool_2_U: "U_2_bool",
-  U_2_int: "int_2_U",
-  int_2_U: "U_2_int",
-  U_2_real: "real_2_U",
-  real_2_U: "U_2_real"
-};
+var BOX_COERCIONS = /* @__PURE__ */ new Set([
+  "U_2_bool",
+  "bool_2_U",
+  "U_2_int",
+  "int_2_U",
+  "U_2_real",
+  "real_2_U"
+]);
 var OPERATORS = {
   "<==>": { symbol: "\u27FA", precedence: 1 },
   "=>": { symbol: "\u27F9", precedence: 1, rightAssociative: true },
@@ -17325,6 +17333,12 @@ var OPERATORS = {
   "Div": { symbol: "div", precedence: 6 },
   "Mod": { symbol: "mod", precedence: 6 }
 };
+function printIndexKey(key) {
+  if (Array.isArray(key) && (key[0] === "IndexField" || key[0] === "MultiIndexField")) {
+    return key.slice(1).map((part) => print(part, 0)).join(", ");
+  }
+  return print(key, 0);
+}
 function print(node, contextPrecedence = 0) {
   if (!Array.isArray(node)) return prettyName(node);
   const [head, ...rest] = node;
@@ -17368,17 +17382,14 @@ function print(node, contextPrecedence = 0) {
       const arity = Number(select[1]) + 1;
       const map = rest[rest.length - arity - 1];
       const keys = rest.slice(rest.length - arity);
-      return print(map, 7) + "[" + keys.map((key) => print(key, 0)).join(", ") + "]";
+      return print(map, 7) + "[" + keys.map(printIndexKey).join(", ") + "]";
     }
     const store = head.match(/^MapType(\d+)Store$/);
     if (store && rest.length === 2 * Number(store[1]) + 5) {
       const arity = Number(store[1]) + 1;
       const map = rest[rest.length - arity - 2];
       const keys = rest.slice(rest.length - arity - 1, -1);
-      return print(map, 7) + "[" + keys.map((key) => print(key, 0)).join(", ") + " := " + print(rest[rest.length - 1], 0) + "]";
-    }
-    if (head === "$Unbox" && rest.length === 2) {
-      return "$Unbox(" + print(rest[1], 0) + ")";
+      return print(map, 7) + "[" + keys.map(printIndexKey).join(", ") + " := " + print(rest[rest.length - 1], 0) + "]";
     }
   }
   const operator2 = OPERATORS[head];
@@ -17455,8 +17466,165 @@ function readVc(vcExchangeText) {
     final: print(finalNode, 0),
     inlined,
     fullyInlined,
-    eliminatedControlFlow: counter.eliminated
+    eliminatedControlFlow: counter.eliminated,
+    // The ASTs, for the skeleton and the path-simplified pass.
+    nodes: {
+      bindings: bindings.map(({ name: name2, value }) => [name2, value]),
+      final: finalNode,
+      inlined: inlinedNode
+    }
   };
+}
+var WELLFORMEDNESS_HEADS = /* @__PURE__ */ new Set(["$IsGoodHeap", "$IsHeapAnchor", "$Is", "$IsAlloc"]);
+var conjunctsOf = (node) => Array.isArray(node) && node[0] === "and" ? node.slice(1).flatMap(conjunctsOf) : [node];
+function vcSkeleton(reading) {
+  if (!reading?.nodes) return null;
+  const definitions = new Map(reading.nodes.bindings);
+  const rows = [];
+  let node = reading.nodes.final;
+  let steps = 0;
+  while (steps++ < 64) {
+    if (typeof node === "string" && definitions.has(node)) {
+      node = definitions.get(node);
+      continue;
+    }
+    if (Array.isArray(node) && node[0] === "=>") {
+      for (const hypothesis of node.slice(1, -1)) {
+        for (const conjunct of conjunctsOf(hypothesis)) {
+          const head = Array.isArray(conjunct) ? conjunct[0] : null;
+          rows.push([WELLFORMEDNESS_HEADS.has(head) ? "given" : "assume", conjunct]);
+        }
+      }
+      node = node[node.length - 1];
+      continue;
+    }
+    break;
+  }
+  const lines = [";; the shape of F \u2014 hypotheses in chain order, then the goal:"];
+  for (const [label, conjunct] of rows) {
+    lines.push(breakFormula(print(conjunct, 0), "        ").replace(/^ {8}/, (label + ":").padEnd(8)));
+  }
+  const goal = print(node, 0);
+  lines.push(breakFormula(goal, "        ").replace(/^ {8}/, "prove:  "));
+  if (goal.includes("_correct")) {
+    lines.push(";; (block names are defined in the full form below)");
+  }
+  return lines.join("\n");
+}
+var EQUALITY_HEADS = /* @__PURE__ */ new Set([
+  "=",
+  "MultiSet#Equal",
+  "Seq#Equal",
+  "Set#Equal",
+  "ISet#Equal",
+  "Map#Equal",
+  "IMap#Equal"
+]);
+function pathSimplified(reading) {
+  if (!reading?.nodes) return null;
+  const counters = { discharged: 0, duplicates: 0, tautologies: 0, frames: 0 };
+  const keyOf = (node) => {
+    let counter = 0;
+    const rename = (n, env) => {
+      if (!Array.isArray(n)) return env.get(n) ?? n;
+      const [head] = n;
+      if (head === "forall" || head === "exists" || head === "lambda") {
+        const inner = new Map(env);
+        const variables = (n[1] ?? []).map((pair) => {
+          const bound = Array.isArray(pair) ? pair[0] : pair;
+          const canonical = "?" + counter++;
+          inner.set(bound, canonical);
+          return Array.isArray(pair) ? [canonical, pair[1]] : canonical;
+        });
+        return [head, variables, ...n.slice(2).map((child) => rename(child, inner))];
+      }
+      return n.map((child) => rename(child, env));
+    };
+    return print(rename(node, /* @__PURE__ */ new Map()), 0);
+  };
+  const headOf = (node) => typeof node[0] === "string" && node[0].startsWith("|") && node[0].endsWith("|") ? node[0].slice(1, -1) : node[0];
+  const isFrame = (node) => Array.isArray(node) && (headOf(node) === "$HeapSucc" || node[0] === "forall" && /\$_ModifiesFrame|\[alloc\]/.test(print(node, 0)));
+  const isTautology = (node) => Array.isArray(node) && EQUALITY_HEADS.has(headOf(node)) && node.length === 3 && keyOf(node[1]) === keyOf(node[2]);
+  function walk(node, context) {
+    if (!Array.isArray(node)) {
+      if (context.has(node)) {
+        counters.discharged++;
+        return "true";
+      }
+      return node;
+    }
+    if (isTautology(node)) {
+      counters.tautologies++;
+      return "true";
+    }
+    const [head] = node;
+    if (head === "=>") {
+      const inner = new Set(context);
+      const hypotheses = [];
+      for (const hypothesis of node.slice(1, -1)) {
+        for (const conjunct of conjunctsOf(hypothesis)) {
+          if (isTautology(conjunct)) {
+            counters.tautologies++;
+            continue;
+          }
+          if (isFrame(conjunct)) {
+            counters.frames++;
+            continue;
+          }
+          const walked = walk(conjunct, inner);
+          if (walked === "true") continue;
+          const key = keyOf(walked);
+          if (inner.has(key)) {
+            counters.duplicates++;
+            continue;
+          }
+          inner.add(key);
+          if (typeof walked === "string") inner.add(walked);
+          hypotheses.push(walked);
+        }
+      }
+      const body = walk(node[node.length - 1], inner);
+      return simplify(["=>", ...hypotheses, body]);
+    }
+    if (head === "and") {
+      const seen = /* @__PURE__ */ new Set();
+      const inner = new Set(context);
+      const kept = [];
+      for (const conjunct of node.slice(1)) {
+        const walked = walk(conjunct, inner);
+        if (walked === "true") continue;
+        const key = keyOf(walked);
+        if (seen.has(key)) {
+          counters.duplicates++;
+          continue;
+        }
+        if (isTautology(walked)) {
+          counters.tautologies++;
+          continue;
+        }
+        seen.add(key);
+        inner.add(key);
+        if (typeof walked === "string") inner.add(walked);
+        kept.push(walked);
+      }
+      return simplify(["and", ...kept]);
+    }
+    return simplify(node.map((child) => Array.isArray(child) ? walk(child, context) : child));
+  }
+  const result = walk(reading.nodes.inlined, /* @__PURE__ */ new Set());
+  const lines = [];
+  lines.push(";; simplified under path assumptions \u2014 NOT the raw verification condition:");
+  lines.push(";; " + counters.discharged + " guard(s) already assumed on the path discharged, " + counters.duplicates + " duplicate hypothesis(es) dropped,");
+  lines.push(";; " + counters.tautologies + " syntactic tautology(ies) x = x dropped, " + counters.frames + " frame/heap-succession hypothesis(es) elided");
+  const text = print(result, 0);
+  const legend = [];
+  if (text.includes("$w$loop")) legend.push("$w$loop = \u201Cloop body reached\u201D flag");
+  if (text.includes("$decr")) legend.push("$decr\u2026$loop = the decreases measure");
+  if (text.includes("$_ModifiesFrame")) legend.push("$_ModifiesFrame = the modifies frame");
+  if (legend.length > 0) lines.push(";; names: " + legend.join("; "));
+  lines.push("");
+  lines.push(breakFormula(text));
+  return lines.join("\n");
 }
 var BREAK_SEPARATORS = [" \u27FA ", " \u27F9 ", " \u2228 ", " \u2227 "];
 function topLevelSplit(text, separator) {
@@ -17515,8 +17683,15 @@ function formatVcReading(reading, { normalized = false } = {}) {
   if (!reading) return ";; no goal found in this exchange";
   const lines = [];
   lines.push(";; the query asserts \xACF and asks for a model; unsat means F holds on every execution");
-  lines.push(";; notation only: prefix \u2192 infix, x#0@1 \u2192 x\u2081, map reads as m[k], Lit/box wrappers collapsed;");
-  lines.push(";; " + reading.eliminatedControlFlow + " ControlFlow path labels elided (they number the control-flow graph so a counterexample can report its path)");
+  lines.push(";; notation: prefix \u2192 infix; x#0@1 \u2192 x\u2081 (SSA incarnation); @@-freshened bound names get");
+  lines.push(";;   primes (i\u2032 \u2014 a fresh binder, not a version); map reads as m[k]; Lit markers and");
+  lines.push(";;   boxing collapsed (type-correct by construction)");
+  lines.push(";; boolean rewrites applied (the only ones): \xACtrue/\xACfalse folded; true/false units");
+  lines.push(";;   dropped from \u2227 \u2228 \u27F9 \u2014 this is what erases the eliminated labels below");
+  lines.push(";; \u27F9 is right-associative: a \u27F9 b \u27F9 c reads \u201Cassume a, assume b, prove c\u201D");
+  lines.push(";; " + reading.eliminatedControlFlow + " ControlFlow path labels elided (they number the control-flow graph so a counterexample");
+  lines.push(";;   can report its path; a negative target marks the assertion being checked \u2014 how a");
+  lines.push(";;   failure maps back to a source line)");
   if (normalized) {
     lines.push(";; tip: enable 'readable names' to see source-level identifiers here");
   }
@@ -17669,11 +17844,27 @@ function renderPickedObligation() {
   const obligation = obligations[Number(picker.value)] ?? obligations[0];
   const smtShown = obligation ? obligationVcText(obligation) : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
   showCode(stageSmt, "smt", smtLanguage, smtShown);
-  const formulaText = obligation?.vc ? formatVcReading(readVc(obligation.vc.input)) : ";; no verification condition to render";
-  const stageFormula = document.querySelector("#stage-formula");
-  showCode(stageFormula, "formula", smtLanguage, formulaText);
-  stageFormula.parentElement.classList.remove("pending");
-  window.__anatomy = { ...window.__anatomy ?? {}, smt: smtShown, formula: formulaText };
+  const reading = obligation?.vc ? readVc(obligation.vc.input) : null;
+  const missing = ";; no verification condition to render";
+  const skeletonText = (reading && vcSkeleton(reading)) ?? missing;
+  const formulaText = reading ? formatVcReading(reading) : missing;
+  const simplifiedText = (reading && pathSimplified(reading)) ?? missing;
+  for (const [id, key, text] of [
+    ["#stage-skeleton", "skeleton", skeletonText],
+    ["#stage-formula", "formula", formulaText],
+    ["#stage-simplified", "simplified", simplifiedText]
+  ]) {
+    const element = document.querySelector(id);
+    showCode(element, key, smtLanguage, text);
+    element.parentElement.classList.remove("pending");
+  }
+  window.__anatomy = {
+    ...window.__anatomy ?? {},
+    smt: smtShown,
+    skeleton: skeletonText,
+    formula: formulaText,
+    simplified: simplifiedText
+  };
   const modelSection = document.querySelector("#model-section");
   if (obligation?.model) {
     modelSection.hidden = false;

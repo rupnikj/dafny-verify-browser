@@ -481,6 +481,14 @@ await gate("anatomy: the pipeline essay computes all stages live", async page =>
   if (!formula.includes("⟹") || !formula.includes(":=")) {
     throw new Error("anatomy formula stage malformed: " + formula.slice(0, 200));
   }
+  const skeleton = await page.evaluate(() => window.__anatomy?.skeleton ?? "");
+  if (!skeleton.includes("prove:") || !skeleton.includes("assume:")) {
+    throw new Error("anatomy skeleton malformed: " + skeleton.slice(0, 200));
+  }
+  const simplified = await page.evaluate(() => window.__anatomy?.simplified ?? "");
+  if (!simplified.includes("NOT the raw verification condition")) {
+    throw new Error("anatomy path-simplified pane missing its label: " + simplified.slice(0, 200));
+  }
   // A failing program reveals the counterexample chapter.
   await page.click("#stage-source .cm-content");
   await page.keyboard.press("ControlOrMeta+A");

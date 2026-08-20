@@ -162,16 +162,41 @@ button:disabled { opacity: .55; cursor: wait; }
     <input type="checkbox" id="anatomy-isolate"> isolate assertions</label></p>
   <div class="stage pending"><div class="codeview" id="stage-smt">press “Analyze” above</div></div>
 
-  <p>Prefix notation is for machines. The same formula again, with operators
-  infix, SSA versions as subscripts (<code>y#0@1</code> → <code>y₁</code>),
-  heap and array reads as indexing (<code>$Heap[o][f]</code>), literal
-  markers and boxing round-trips collapsed, and the <code>ControlFlow</code>
-  labels removed — they number the control-flow graph so a counterexample
-  can report its path, and carry no other content. Each <code>let</code>
-  names one basic block; read the definitions bottom-up (the last one is the
-  method entry). The heap hypotheses are kept: they are part of what the
-  proof may assume.</p>
+  <p>Before the formula in full, its shape. A verification condition is a
+  chain of implications, and <code>⟹</code> associates to the right:
+  everything before the last arrow is hypothesis, and the final consequent
+  is the claim. The rows below follow the chain in order — type and heap
+  wellformedness marked <code>given</code>, path facts <code>assume</code>,
+  and the goal <code>prove</code>:</p>
+  <div class="stage pending"><div class="codeview" id="stage-skeleton">press “Analyze” above</div></div>
+
+  <p>Now the full formula, faithfully — the audit trail for the summary
+  above. Operators are infix. <code>x#0@1</code> becomes <code>x₁</code>
+  (an SSA incarnation), while <code>i#3@@0</code> becomes <code>i′</code> —
+  the <code>@@</code> is Boogie freshening a reused bound-variable name,
+  not a version. Heap and array reads render as indexing
+  (<code>$Heap[a][i]</code>); literal markers and boxing are collapsed,
+  which is type-correct by construction in Dafny's encoding. Exactly two
+  boolean rewrites are applied — <code>¬true</code>/<code>¬false</code>
+  fold, and true/false units drop from <code>∧ ∨ ⟹</code> — and they are
+  what erases the <code>ControlFlow</code> path labels: those number the
+  control-flow graph so a counterexample can report its path (a negative
+  label marks the assertion being checked) and carry no other content.
+  Each <code>let</code> names one basic block; read the definitions
+  bottom-up (the last one is the method entry). Every hypothesis, heap
+  included, is kept — and so are the quantifier patterns
+  (<code>⟨pattern …⟩</code>): they gate instantiation, so they are content,
+  not notation.</p>
   <div class="stage pending"><div class="codeview" id="stage-formula">press “Analyze” above</div></div>
+
+  <p>Last, a working view, clearly labeled: the same formula simplified
+  under its own path assumptions. A guard the path has already assumed
+  discharges; duplicate hypotheses, syntactic tautologies
+  (<code>x = x</code>), and the frame conditions drop, with counts in the
+  header. This is no longer the raw verification condition — it is what
+  remains once you trust the path — and on a healthy obligation the
+  <code>unsat</code> often becomes visible by eye:</p>
+  <div class="stage pending"><div class="codeview" id="stage-simplified">press “Analyze” above</div></div>
 
   <div class="arrow">▼ Z3 decides</div>
 
