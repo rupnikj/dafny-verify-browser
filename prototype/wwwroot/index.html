@@ -215,7 +215,11 @@
 
           <div class="panel-view js-view" id="boogie-view" role="tabpanel" aria-labelledby="boogie-tab" hidden>
             <div class="js-toolbar">
-              <span class="js-toolbar-note" id="boogie-note">what your program becomes before verification-condition generation (prelude axioms omitted)</span>
+              <label class="readable-toggle"
+                title="Dafny's translator emits type-descriptor axioms (Tclass, Tag, Box/Unbox, $Is) for every type the program touches — generated plumbing above the procedures. Distinct from the DafnyPrelude axiomatization, which is always filtered.">
+                <input type="checkbox" id="boogie-hide-plumbing" checked> hide type axioms
+              </label>
+              <span class="js-toolbar-note" id="boogie-note">what your program becomes before verification-condition generation</span>
             </div>
             <div id="boogie-output" class="js-editor" aria-label="Boogie translation">Verify a program, then open this tab to see its Boogie translation.</div>
           </div>

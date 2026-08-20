@@ -6,6 +6,7 @@
 // (normalization off) because this page exists to be read.
 import { createDafny } from "./dafny-browser.js";
 import { encodeShareFragment, decodeShareFragment, shareFragmentFrom } from "./share-codec.js";
+import { dafnyLanguage, boogieLanguage, smtLanguage, createReadOnlyView } from "./code-view.js";
 
 const DEFAULT_PROGRAM = [
   "method Abs(x: int) returns (y: int)",
@@ -31,7 +32,13 @@ const fragment = shareFragmentFrom(window.location.hash);
 const ready = fragment
   ? decodeShareFragment(fragment).then(text => { program = text; }).catch(() => {})
   : Promise.resolve();
-ready.then(() => { stageSource.textContent = program; });
+const views = {};
+function showCode(element, key, language, text) {
+  views[key]?.destroy();
+  element.textContent = "";
+  views[key] = createReadOnlyView(element, language, text);
+}
+ready.then(() => { showCode(stageSource, "source", dafnyLanguage, program); });
 
 // Both outbound links carry the current program.
 for (const id of ["open-full", "edit-link"]) {
@@ -100,15 +107,19 @@ analyzeButton.addEventListener("click", async () => {
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
 
-    stageBoogie.textContent = boogieText
+    const boogieShown = boogieText
       ? capLines(firstImplementation(boogieText), 60)
-      : "no translation recorded (does the program parse?)";
+      : "// no translation recorded (does the program parse?)";
+    showCode(stageBoogie, "boogie", boogieLanguage, boogieShown);
     stageBoogie.parentElement.classList.remove("pending");
 
-    stageSmt.textContent = Array.isArray(entries) && entries.length
+    const smtShown = Array.isArray(entries) && entries.length
       ? firstObligationVc(entries)
-      : "no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
+      : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
+    showCode(stageSmt, "smt", smtLanguage, smtShown);
     stageSmt.parentElement.classList.remove("pending");
+    // CodeMirror virtualizes; tooling asserts on these instead of the DOM.
+    window.__anatomy = { boogie: boogieShown, smt: smtShown };
 
     const line = document.createElement("div");
     line.className = "verdict-line " + (result.verified ? "ok" : "bad");

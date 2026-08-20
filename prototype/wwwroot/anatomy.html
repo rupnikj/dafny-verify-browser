@@ -60,6 +60,38 @@ button:disabled { opacity: .55; cursor: wait; }
 .verdict-line.ok { color: var(--ok); }
 .verdict-line.bad { color: var(--bad); }
 .note { color: var(--muted); font-size: 13.5px; }
+
+.codeview {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden;
+  font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted); padding: 14px 16px;
+}
+.codeview:has(.cm-editor) { padding: 0; }
+.codeview .cm-editor { max-height: 480px; }
+.codeview .cm-scroller { overflow: auto; }
+:root {
+  --editor-bg: #151a21; --text: #d8dee9; --border-strong: #3b4655;
+  --surface-0: #11151b; --surface-2: #1d2430;
+  --ed-caret: #72bdff; --ed-selection: #234b6f; --ed-activeline: rgba(255,255,255,.027);
+  --ed-gutter: #5e6978; --ed-gutter-active: #bbc5d0;
+  --ed-tooltip-bg: #242c38; --ed-tooltip-border: #465263;
+  --syn-keyword: #d98cff; --syn-type: #55d6be; --syn-def: #7fc4ff;
+  --syn-var: #cdd6e0; --syn-atom: #f0a96b; --syn-number: #b7dc8b;
+  --syn-string: #d5bd79; --syn-comment: #687687; --syn-meta: #e6a75a;
+  --syn-operator: #8dc9ff; --syn-punct: #9ca8b7;
+}
+:root[data-theme="light"] {
+  --editor-bg: #ffffff; --text: #1f2328; --border-strong: #bcc6d0;
+  --surface-0: #f6f8fa; --surface-2: #eaeef2;
+  --ed-caret: #0969da; --ed-selection: #b6d7ff; --ed-activeline: rgba(0,0,0,.035);
+  --ed-gutter: #8c959f; --ed-gutter-active: #424a53;
+  --ed-tooltip-bg: #ffffff; --ed-tooltip-border: #d0d7de;
+  --syn-keyword: #a626a4; --syn-type: #0184bc; --syn-def: #4078f2;
+  --syn-var: #383a42; --syn-atom: #b76b01; --syn-number: #986801;
+  --syn-string: #50a14f; --syn-comment: #a0a1a7; --syn-meta: #b66a00;
+  --syn-operator: #0184bc; --syn-punct: #696c77;
+}
 </style>
 </head>
 <body>
@@ -89,7 +121,7 @@ button:disabled { opacity: .55; cursor: wait; }
   about every possible execution. This is the program being dissected — edit it
   in the <a id="edit-link" href="./">full demo</a> and reopen this page from
   there to dissect your own:</p>
-  <div class="stage"><pre id="stage-source">loading…</pre></div>
+  <div class="stage"><div class="codeview" id="stage-source">loading…</div></div>
 
   <div class="arrow">▼ parse · resolve · translate</div>
 
@@ -101,7 +133,7 @@ button:disabled { opacity: .55; cursor: wait; }
   termination get bookkeeping variables, and every statement keeps a breadcrumb
   (<code>/input.dfy(line,col)</code>) pointing back at your source. This is
   your method's translation, computed just now:</p>
-  <div class="stage pending"><pre id="stage-boogie">press “Analyze” above</pre></div>
+  <div class="stage pending"><div class="codeview" id="stage-boogie">press “Analyze” above</div></div>
 
   <div class="arrow">▼ verification-condition generation</div>
 
@@ -115,7 +147,7 @@ button:disabled { opacity: .55; cursor: wait; }
   <code>(assert (not …))</code>. Real variable names survive
   (<code>x#0</code>, <code>y#0@1</code> — the <code>@1</code> counts
   assignments), and <code>ControlFlow</code> encodes which path is taken:</p>
-  <div class="stage pending"><pre id="stage-smt">press “Analyze” above</pre></div>
+  <div class="stage pending"><div class="codeview" id="stage-smt">press “Analyze” above</div></div>
 
   <div class="arrow">▼ Z3 decides</div>
 

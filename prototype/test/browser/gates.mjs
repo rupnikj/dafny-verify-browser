@@ -437,8 +437,8 @@ await gate("anatomy: the pipeline essay computes all stages live", async page =>
     () => document.querySelector("#status")?.textContent.startsWith("done"),
     undefined, { timeout: BOOT_TIMEOUT });
   const stages = await page.evaluate(() => ({
-    boogie: document.querySelector("#stage-boogie").textContent,
-    smt: document.querySelector("#stage-smt").textContent,
+    boogie: window.__anatomy?.boogie ?? "",
+    smt: window.__anatomy?.smt ?? "",
     verdict: document.querySelector("#stage-verdict").textContent
   }));
   if (!stages.boogie.includes("implementation") || !stages.smt.includes("(push 1)") ||
