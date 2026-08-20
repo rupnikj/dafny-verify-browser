@@ -17251,25 +17251,71 @@ function firstImplementation(boogieText) {
   const end = boogieText.indexOf("\n}", start);
   return boogieText.slice(start + 1, end < 0 ? void 0 : end + 2);
 }
-function firstObligationVc(entries) {
-  let vcExchange = null;
-  let answer = null;
-  let seenProblem = false;
+function parseObligations(entries) {
+  const obligations2 = [];
+  const pending = [];
+  let current = null;
   for (const entry of entries) {
     if (entry.kind === "problem") {
-      seenProblem = true;
+      current = { name: entry.input, vc: null, answer: null, model: null };
+      for (let i2 = pending.length - 1; i2 >= 0; i2--) {
+        if (pending[i2].input.includes("(push 1)")) {
+          current.vc = pending[i2];
+          break;
+        }
+      }
+      obligations2.push(current);
+      pending.length = 0;
       continue;
     }
-    if (!seenProblem && entry.input.includes("(push 1)")) vcExchange = entry;
-    if (seenProblem && entry.input.trim() === "(check-sat)" && answer === null) {
-      answer = entry.output.trim();
-      break;
+    if (current && entry.input.trim() === "(check-sat)" && current.answer === null) {
+      current.answer = entry.output.trim();
+      continue;
     }
+    if (current && entry.input.trim() === "(get-model)" && current.model === null) {
+      current.model = entry.output;
+      continue;
+    }
+    pending.push(entry);
   }
-  if (!vcExchange) return "no verification condition recorded";
-  const vc = vcExchange.input.slice(vcExchange.input.indexOf("(push 1)"));
-  return capLines(vc.trim(), PANE_LIMIT) + "\n\n(check-sat)\n;; Z3 answers: " + (answer ?? "\u2026");
+  return obligations2;
 }
+function obligationLabel(name2) {
+  const [kind, path] = name2.split("$$");
+  const method = (path ?? name2).split(".").pop();
+  const kindLabel = kind === "Impl" ? "correctness" : kind === "CheckWellformed" ? "well-formedness" : kind;
+  return method + " \u2014 " + kindLabel;
+}
+function obligationVcText(obligation) {
+  if (!obligation?.vc) return ";; no verification condition recorded";
+  const vc = obligation.vc.input.slice(obligation.vc.input.indexOf("(push 1)"));
+  return capLines(vc.trim(), PANE_LIMIT) + "\n\n(check-sat)\n;; Z3 answers: " + (obligation.answer ?? "\u2026");
+}
+var obligations = [];
+var latestDiagnostics = [];
+function renderPickedObligation() {
+  const picker = document.querySelector("#obligation-pick");
+  const obligation = obligations[Number(picker.value)] ?? obligations[0];
+  const smtShown = obligation ? obligationVcText(obligation) : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
+  showCode(stageSmt, "smt", smtLanguage, smtShown);
+  window.__anatomy = { ...window.__anatomy ?? {}, smt: smtShown };
+  const modelSection = document.querySelector("#model-section");
+  if (obligation?.model) {
+    modelSection.hidden = false;
+    showCode(
+      document.querySelector("#stage-model"),
+      "model",
+      smtLanguage,
+      capLines(obligation.model.trim(), PANE_LIMIT)
+    );
+    const states = latestDiagnostics.flatMap((diagnostic) => diagnostic.counterexample ?? []);
+    document.querySelector("#stage-cex").textContent = states.length > 0 ? states.map((state) => `${state.name}${state.line ? " (line " + state.line + ")" : ""}:
+  ${state.assumption}`).join("\n") : "no source-level interpretation available for this failure";
+  } else {
+    modelSection.hidden = true;
+  }
+}
+document.querySelector("#obligation-pick").addEventListener("change", renderPickedObligation);
 var dafnyPromise = null;
 function ensureDafny() {
   dafnyPromise ??= createDafny({
@@ -17295,10 +17341,23 @@ analyzeButton.addEventListener("click", async () => {
     const boogieShown = boogieText ? capLines(firstImplementation(boogieText), PANE_LIMIT) : "// no translation recorded (does the program parse?)";
     showCode(stageBoogie, "boogie", boogieLanguage, boogieShown);
     stageBoogie.parentElement.classList.remove("pending");
-    const smtShown = Array.isArray(entries) && entries.length ? firstObligationVc(entries) : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
-    showCode(stageSmt, "smt", smtLanguage, smtShown);
+    obligations = Array.isArray(entries) ? parseObligations(entries) : [];
+    const picker = document.querySelector("#obligation-pick");
+    picker.replaceChildren();
+    for (const [index, obligation] of obligations.entries()) {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = obligationLabel(obligation.name) + (obligation.answer && obligation.answer !== "unsat" ? " \u2014 fails" : "");
+      option.title = obligation.name;
+      picker.append(option);
+    }
+    document.querySelector("#obligation-row").hidden = obligations.length === 0;
+    const firstFailing = obligations.findIndex((o) => o.answer && o.answer !== "unsat");
+    picker.value = String(firstFailing >= 0 ? firstFailing : 0);
+    latestDiagnostics = result.diagnostics ?? [];
+    window.__anatomy = { boogie: boogieShown };
+    renderPickedObligation();
     stageSmt.parentElement.classList.remove("pending");
-    window.__anatomy = { boogie: boogieShown, smt: smtShown };
     const line = document.createElement("div");
     line.className = "verdict-line " + (result.verified ? "ok" : "bad");
     line.textContent = result.verified ? `unsat \u2192 verified: ${result.verifiedCount} obligation(s), no counterexample can exist` : `\u2717 not verified: ${result.errorCount} problem(s) \u2014 the solver found (or could not rule out) a violating execution`;
@@ -17307,26 +17366,6 @@ analyzeButton.addEventListener("click", async () => {
     detail.textContent = `stage: ${result.stage} \u2022 ${result.smtExchangeCount} SMT exchanges \u2022 all computed in this browser tab`;
     stageVerdict.append(detail);
     stageVerdict.parentElement.classList.remove("pending");
-    const modelSection = document.querySelector("#model-section");
-    if (!result.verified) {
-      const modelEntry = (entries ?? []).find((entry) => entry.kind === "exchange" && entry.input.trim() === "(get-model)");
-      const states = (result.diagnostics ?? []).flatMap((diagnostic) => diagnostic.counterexample ?? []);
-      if (modelEntry || states.length > 0) {
-        modelSection.hidden = false;
-        showCode(
-          document.querySelector("#stage-model"),
-          "model",
-          smtLanguage,
-          modelEntry ? capLines(modelEntry.output.trim(), PANE_LIMIT) : ";; no model in the transcript"
-        );
-        document.querySelector("#stage-cex").textContent = states.length > 0 ? states.map((state) => `${state.name}${state.line ? " (line " + state.line + ")" : ""}:
-  ${state.assumption}`).join("\n") : "no source-level interpretation available for this failure";
-      } else {
-        modelSection.hidden = true;
-      }
-    } else {
-      modelSection.hidden = true;
-    }
     analyzedOnce = true;
     analyzeButton.textContent = "Analyze";
     for (const stage of [stageBoogie, stageSmt, stageVerdict]) {

@@ -86,25 +86,83 @@ function firstImplementation(boogieText) {
   return boogieText.slice(start + 1, end < 0 ? undefined : end + 2);
 }
 
-// The verification condition of the first obligation: from (push 1) in the
-// big exchange through the solver's answer to its check-sat.
-function firstObligationVc(entries) {
-  let vcExchange = null;
-  let answer = null;
-  let seenProblem = false;
+// One record per proof obligation. The transport transmits each
+// obligation's setup and VC BEFORE announcing it, so the VC is the last
+// pending exchange containing (push 1); check-sat and (on failure)
+// get-model follow the announcement.
+function parseObligations(entries) {
+  const obligations = [];
+  const pending = [];
+  let current = null;
   for (const entry of entries) {
-    if (entry.kind === "problem") { seenProblem = true; continue; }
-    if (!seenProblem && entry.input.includes("(push 1)")) vcExchange = entry;
-    if (seenProblem && entry.input.trim() === "(check-sat)" && answer === null) {
-      answer = entry.output.trim();
-      break;
+    if (entry.kind === "problem") {
+      current = { name: entry.input, vc: null, answer: null, model: null };
+      for (let i = pending.length - 1; i >= 0; i--) {
+        if (pending[i].input.includes("(push 1)")) { current.vc = pending[i]; break; }
+      }
+      obligations.push(current);
+      pending.length = 0;
+      continue;
     }
+    if (current && entry.input.trim() === "(check-sat)" && current.answer === null) {
+      current.answer = entry.output.trim();
+      continue;
+    }
+    if (current && entry.input.trim() === "(get-model)" && current.model === null) {
+      current.model = entry.output;
+      continue;
+    }
+    pending.push(entry);
   }
-  if (!vcExchange) return "no verification condition recorded";
-  const vc = vcExchange.input.slice(vcExchange.input.indexOf("(push 1)"));
-  return capLines(vc.trim(), PANE_LIMIT) +
-    "\n\n(check-sat)\n;; Z3 answers: " + (answer ?? "…");
+  return obligations;
 }
+
+function obligationLabel(name) {
+  const [kind, path] = name.split("$$");
+  const method = (path ?? name).split(".").pop();
+  const kindLabel = kind === "Impl" ? "correctness"
+    : kind === "CheckWellformed" ? "well-formedness"
+    : kind;
+  return method + " — " + kindLabel;
+}
+
+function obligationVcText(obligation) {
+  if (!obligation?.vc) return ";; no verification condition recorded";
+  const vc = obligation.vc.input.slice(obligation.vc.input.indexOf("(push 1)"));
+  return capLines(vc.trim(), PANE_LIMIT) +
+    "\n\n(check-sat)\n;; Z3 answers: " + (obligation.answer ?? "…");
+}
+
+let obligations = [];
+let latestDiagnostics = [];
+
+// The SMT pane and the counterexample chapter follow the picked obligation:
+// each obligation is checked in its own solver session, and a model is a
+// witness against that one claim.
+function renderPickedObligation() {
+  const picker = document.querySelector("#obligation-pick");
+  const obligation = obligations[Number(picker.value)] ?? obligations[0];
+  const smtShown = obligation
+    ? obligationVcText(obligation)
+    : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
+  showCode(stageSmt, "smt", smtLanguage, smtShown);
+  window.__anatomy = { ...(window.__anatomy ?? {}), smt: smtShown };
+
+  const modelSection = document.querySelector("#model-section");
+  if (obligation?.model) {
+    modelSection.hidden = false;
+    showCode(document.querySelector("#stage-model"), "model", smtLanguage,
+      capLines(obligation.model.trim(), PANE_LIMIT));
+    const states = latestDiagnostics.flatMap(diagnostic => diagnostic.counterexample ?? []);
+    document.querySelector("#stage-cex").textContent = states.length > 0
+      ? states.map(state =>
+          `${state.name}${state.line ? " (line " + state.line + ")" : ""}:\n  ${state.assumption}`).join("\n")
+      : "no source-level interpretation available for this failure";
+  } else {
+    modelSection.hidden = true;
+  }
+}
+document.querySelector("#obligation-pick").addEventListener("change", renderPickedObligation);
 
 let dafnyPromise = null;
 function ensureDafny() {
@@ -134,13 +192,26 @@ analyzeButton.addEventListener("click", async () => {
     showCode(stageBoogie, "boogie", boogieLanguage, boogieShown);
     stageBoogie.parentElement.classList.remove("pending");
 
-    const smtShown = Array.isArray(entries) && entries.length
-      ? firstObligationVc(entries)
-      : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
-    showCode(stageSmt, "smt", smtLanguage, smtShown);
+    obligations = Array.isArray(entries) ? parseObligations(entries) : [];
+    const picker = document.querySelector("#obligation-pick");
+    picker.replaceChildren();
+    for (const [index, obligation] of obligations.entries()) {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = obligationLabel(obligation.name) +
+        (obligation.answer && obligation.answer !== "unsat" ? " — fails" : "");
+      option.title = obligation.name;
+      picker.append(option);
+    }
+    document.querySelector("#obligation-row").hidden = obligations.length === 0;
+    // Default to the first failing obligation (the interesting world), else
+    // the first.
+    const firstFailing = obligations.findIndex(o => o.answer && o.answer !== "unsat");
+    picker.value = String(firstFailing >= 0 ? firstFailing : 0);
+    latestDiagnostics = result.diagnostics ?? [];
+    window.__anatomy = { boogie: boogieShown };
+    renderPickedObligation();
     stageSmt.parentElement.classList.remove("pending");
-    // CodeMirror virtualizes; tooling asserts on these instead of the DOM.
-    window.__anatomy = { boogie: boogieShown, smt: smtShown };
 
     const line = document.createElement("div");
     line.className = "verdict-line " + (result.verified ? "ok" : "bad");
@@ -153,29 +224,6 @@ analyzeButton.addEventListener("click", async () => {
       `all computed in this browser tab`;
     stageVerdict.append(detail);
     stageVerdict.parentElement.classList.remove("pending");
-
-    // Failing programs get the counterexample chapter: the raw model and
-    // Dafny's source-level interpretation of it.
-    const modelSection = document.querySelector("#model-section");
-    if (!result.verified) {
-      const modelEntry = (entries ?? []).find(entry =>
-        entry.kind === "exchange" && entry.input.trim() === "(get-model)");
-      const states = (result.diagnostics ?? [])
-        .flatMap(diagnostic => diagnostic.counterexample ?? []);
-      if (modelEntry || states.length > 0) {
-        modelSection.hidden = false;
-        showCode(document.querySelector("#stage-model"), "model", smtLanguage,
-          modelEntry ? capLines(modelEntry.output.trim(), PANE_LIMIT) : ";; no model in the transcript");
-        document.querySelector("#stage-cex").textContent = states.length > 0
-          ? states.map(state =>
-              `${state.name}${state.line ? " (line " + state.line + ")" : ""}:\n  ${state.assumption}`).join("\n")
-          : "no source-level interpretation available for this failure";
-      } else {
-        modelSection.hidden = true;
-      }
-    } else {
-      modelSection.hidden = true;
-    }
 
     analyzedOnce = true;
     analyzeButton.textContent = "Analyze";

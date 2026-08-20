@@ -57,6 +57,10 @@ button {
 }
 button:disabled { opacity: .55; cursor: wait; }
 #status { color: var(--muted); font-size: 13px; margin-left: 12px; }
+#obligation-pick {
+  font: 14px inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+}
 .verdict-line { font-weight: 700; }
 .verdict-line.ok { color: var(--ok); }
 .verdict-line.bad { color: var(--bad); }
@@ -148,6 +152,9 @@ button:disabled { opacity: .55; cursor: wait; }
   <code>(assert (not …))</code>. Real variable names survive
   (<code>x#0</code>, <code>y#0@1</code> — the <code>@1</code> counts
   assignments), and <code>ControlFlow</code> encodes which path is taken:</p>
+  <p id="obligation-row" hidden>Each obligation is checked in its own solver
+  session; pick which one to inspect:
+  <select id="obligation-pick"></select></p>
   <div class="stage pending"><div class="codeview" id="stage-smt">press “Analyze” above</div></div>
 
   <div class="arrow">▼ Z3 decides</div>
@@ -166,9 +173,12 @@ button:disabled { opacity: .55; cursor: wait; }
 
   <div id="model-section" hidden>
     <h2>The counterexample</h2>
-    <p>For this program the solver answered <code>sat</code>: it found concrete
-    values under which a claim fails. Its answer to <code>(get-model)</code> is
-    below — an assignment for every symbol in the formula:</p>
+    <p>For the selected obligation the solver did not answer
+    <code>unsat</code> — it answered <code>sat</code> (a violating execution
+    exists) or <code>unknown</code> (it could not rule one out; with
+    quantified formulas Z3 often cannot prove satisfiability outright). Either
+    way it produced a candidate model: its answer to <code>(get-model)</code>
+    is below, an assignment for every symbol in the formula:</p>
     <div class="stage"><div class="codeview" id="stage-model">…</div></div>
     <p>Most of those symbols are encoding internals. Dafny reads the model,
     keeps the entries that correspond to source-level variables, and attaches
