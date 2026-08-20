@@ -2,6 +2,7 @@ import { Compartment, EditorState, RangeSet, StateEffect, StateField } from "@co
 import {
   Decoration,
   EditorView,
+  closeHoverTooltips,
   GutterMarker,
   WidgetType,
   crosshairCursor,
@@ -934,6 +935,17 @@ function glossaryTooltip(view, pos) {
 }
 const glossaryHover = hoverTooltip(glossaryTooltip, { hoverTime: 300 });
 
+// A hover tooltip must never outlive its trigger: close it when the pointer
+// leaves the pane, and when the pane's document is replaced under it (an
+// obligation switch or re-verify would otherwise leave it floating at stale
+// coordinates).
+function closeTooltipsOnLeave(view) {
+  view.dom.addEventListener("pointerleave", () => {
+    view.dispatch({ effects: closeHoverTooltips });
+  });
+  return view;
+}
+
 let boogieEditor = null;
 let boogieDirty = false;
 let boogieFullText = "";
@@ -993,7 +1005,7 @@ async function renderBoogie() {
       (text.length / 1024).toFixed(0) + " KB (DafnyPrelude always filtered)";
     if (!boogieEditor) {
       boogieOutput.textContent = "";
-      boogieEditor = new EditorView({
+      boogieEditor = closeTooltipsOnLeave(new EditorView({
         parent: boogieOutput,
         state: EditorState.create({
           doc: "",
@@ -1011,7 +1023,7 @@ async function renderBoogie() {
             keymap.of([...defaultKeymap, ...searchKeymap])
           ]
         })
-      });
+      }));
     }
     renderBoogieView();
   } catch (error) {
@@ -1193,7 +1205,10 @@ function renderSmtSlice() {
       "\n;; …truncated for display (" + ((text.length / 1048576).toFixed(1)) + " MB total)\n";
   }
   smtNote.textContent = label + ", " + (text.length / 1024).toFixed(0) + " KB of SMT-LIB";
-  smtEditor.dispatch({ changes: { from: 0, to: smtEditor.state.doc.length, insert: text } });
+  smtEditor.dispatch({
+    changes: { from: 0, to: smtEditor.state.doc.length, insert: text },
+    effects: closeHoverTooltips
+  });
   if (choice !== "preamble" && choice !== "all" && !smtHidePrelude.checked) {
     // Open at the verification condition — everything above (push 1) is the
     // per-obligation resend of options and the Dafny prelude.
@@ -1253,7 +1268,7 @@ async function renderSmtTranscript() {
       : smtSections.obligations.length > 0 ? "0" : "all";
     if (!smtEditor) {
       smtOutput.textContent = "";
-      smtEditor = new EditorView({
+      smtEditor = closeTooltipsOnLeave(new EditorView({
         parent: smtOutput,
         state: EditorState.create({
           doc: "",
@@ -1271,7 +1286,7 @@ async function renderSmtTranscript() {
             keymap.of([...defaultKeymap, ...searchKeymap])
           ]
         })
-      });
+      }));
     }
     renderSmtSlice();
   } catch (error) {
