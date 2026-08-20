@@ -60,6 +60,10 @@ const subscript = digits => [...digits].map(d => SUBSCRIPTS[Number(d)] ?? d).joi
 
 export function prettyName(raw) {
   let name = raw.startsWith("|") && raw.endsWith("|") ? raw.slice(1, -1) : raw;
+  // Boogie's uniquifier doubles the @; fold it into the same version idea.
+  name = name.replace(/@@/g, "@");
+  // The default module's qualifier carries no information.
+  if (name.startsWith("_module.__default.")) name = name.slice("_module.__default.".length);
   // Dafny convention: name#k is the k-th distinct variable of that name
   // (#0 is the common case and drops), @v is the SSA version.
   const match = name.match(/^(.*?)(#(\d+))?(@(\d+))?$/);
@@ -119,8 +123,20 @@ export function simplify(node, counter = { eliminated: 0 }) {
     // annotation node: if the body simplified to a constant, drop the wrapper
     if (!Array.isArray(rest[0])) return rest[0];
   }
+  // Literal markers (Lit exists only to steer triggering) and round-trip
+  // box coercions are notation, not content.
+  if ((head === "LitInt" || head === "LitReal") && rest.length === 1) return rest[0];
+  if (head === "Lit" && rest.length >= 1) return rest[rest.length - 1];
+  const inverse = COERCION_INVERSE[head];
+  if (inverse && Array.isArray(rest[0]) && rest[0][0] === inverse) return rest[0][1];
   return node;
 }
+
+const COERCION_INVERSE = {
+  U_2_bool: "bool_2_U", bool_2_U: "U_2_bool",
+  U_2_int: "int_2_U", int_2_U: "U_2_int",
+  U_2_real: "real_2_U", real_2_U: "U_2_real"
+};
 
 // ---------- infix printing ----------
 
@@ -139,7 +155,12 @@ const OPERATORS = {
   "-": { symbol: "-", precedence: 5 },
   "*": { symbol: "·", precedence: 6 },
   "div": { symbol: "div", precedence: 6 },
-  "mod": { symbol: "mod", precedence: 6 }
+  "mod": { symbol: "mod", precedence: 6 },
+  // Dafny's prelude wraps nonlinear arithmetic in named functions; users
+  // can't collide with the bare names (their functions are module-qualified).
+  "Mul": { symbol: "·", precedence: 6 },
+  "Div": { symbol: "div", precedence: 6 },
+  "Mod": { symbol: "mod", precedence: 6 }
 };
 
 export function print(node, contextPrecedence = 0) {
@@ -184,6 +205,29 @@ export function print(node, contextPrecedence = 0) {
     const bindings = (rest[0] ?? [])
       .map(pair => prettyName(pair[0]) + " = " + print(pair[1], 0)).join(", ");
     return "(let " + bindings + " in " + print(rest[1], 0) + ")";
+  }
+  // Boogie's polymorphic maps (the heap is one): MapTypeNSelect takes N+2
+  // type arguments, the map, and N+1 keys — render as indexing. Same for
+  // Store, and drop $Unbox's type argument.
+  if (typeof head === "string") {
+    const select = head.match(/^MapType(\d+)Select$/);
+    if (select && rest.length === 2 * Number(select[1]) + 4) {
+      const arity = Number(select[1]) + 1;
+      const map = rest[rest.length - arity - 1];
+      const keys = rest.slice(rest.length - arity);
+      return print(map, 7) + "[" + keys.map(key => print(key, 0)).join(", ") + "]";
+    }
+    const store = head.match(/^MapType(\d+)Store$/);
+    if (store && rest.length === 2 * Number(store[1]) + 5) {
+      const arity = Number(store[1]) + 1;
+      const map = rest[rest.length - arity - 2];
+      const keys = rest.slice(rest.length - arity - 1, -1);
+      return print(map, 7) + "[" + keys.map(key => print(key, 0)).join(", ") +
+        " := " + print(rest[rest.length - 1], 0) + "]";
+    }
+    if (head === "$Unbox" && rest.length === 2) {
+      return "$Unbox(" + print(rest[1], 0) + ")";
+    }
   }
   const operator = OPERATORS[head];
   if (operator && rest.length >= 2) {
@@ -281,13 +325,73 @@ export function readVc(vcExchangeText) {
   };
 }
 
+// ---------- layout: break wide formulas at their logical joints ----------
+
+const BREAK_SEPARATORS = [" ⟺ ", " ⟹ ", " ∨ ", " ∧ "];
+
+function topLevelSplit(text, separator) {
+  const pieces = [];
+  let depth = 0, start = 0, i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && ch === separator[0] && text.startsWith(separator, i)) {
+      pieces.push(text.slice(start, i));
+      i += separator.length;
+      start = i;
+      continue;
+    }
+    i++;
+  }
+  pieces.push(text.slice(start));
+  return pieces;
+}
+
+/** One printed formula, broken at top-level connectives while it exceeds
+ * the width; operands that offer no joint stand as long lines. */
+export function breakFormula(text, indent = "", width = 100) {
+  if (indent.length + text.length <= width) return indent + text;
+  // A fully enclosing paren group: break the inside, keep the parens glued.
+  if (text.startsWith("(") && text.endsWith(")")) {
+    let depth = 0, enclosing = true;
+    for (let i = 0; i < text.length - 1 && enclosing; i++) {
+      if (text[i] === "(") depth++;
+      else if (text[i] === ")") { depth--; if (depth === 0) enclosing = false; }
+    }
+    if (enclosing) {
+      const inner = breakFormula(text.slice(1, -1), indent + " ", width);
+      return indent + "(" + inner.slice(indent.length + 1) + ")";
+    }
+  }
+  // A quantifier: variables on the first line, body indented below the dot.
+  if (/^[∀∃λ] /.test(text)) {
+    const dot = topLevelSplit(text, " · ");
+    if (dot.length > 1) {
+      return indent + dot[0] + " ·\n" +
+        breakFormula(dot.slice(1).join(" · "), indent + "  ", width);
+    }
+  }
+  for (const separator of BREAK_SEPARATORS) {
+    const pieces = topLevelSplit(text, separator);
+    if (pieces.length < 2) continue;
+    const symbol = separator.trim() + " ";
+    return pieces.map((piece, index) => {
+      if (index === 0) return breakFormula(piece, indent, width);
+      const branch = breakFormula(piece, indent + " ".repeat(symbol.length), width);
+      return indent + symbol + branch.slice(indent.length + symbol.length);
+    }).join("\n");
+  }
+  return indent + text;
+}
+
 /** The display text for a code pane: notes, definitions table, inlined form. */
 export function formatVcReading(reading, { normalized = false } = {}) {
   if (!reading) return ";; no goal found in this exchange";
   const lines = [];
   lines.push(";; the query asserts ¬F and asks for a model; unsat means F holds on every execution");
-  lines.push(";; notation only: prefix → infix, x#0@1 → x₁; " +
-    reading.eliminatedControlFlow + " ControlFlow path labels elided " +
+  lines.push(";; notation only: prefix → infix, x#0@1 → x₁, map reads as m[k], Lit/box wrappers collapsed;");
+  lines.push(";; " + reading.eliminatedControlFlow + " ControlFlow path labels elided " +
     "(they number the control-flow graph so a counterexample can report its path)");
   if (normalized) {
     lines.push(";; tip: enable 'readable names' to see source-level identifiers here");
@@ -297,7 +401,13 @@ export function formatVcReading(reading, { normalized = false } = {}) {
     lines.push(";; F, by named blocks (each let names one basic block; read bottom-up):");
     const width = Math.min(28, Math.max(...reading.definitions.map(d => d.name.length)));
     for (const definition of reading.definitions) {
-      lines.push(definition.name.padEnd(width) + " := " + definition.text);
+      const row = definition.name.padEnd(width) + " := " + definition.text;
+      if (row.length <= 110) {
+        lines.push(row);
+      } else {
+        lines.push(definition.name + " :=");
+        lines.push(breakFormula(definition.text, "  "));
+      }
     }
     lines.push("");
     lines.push(";; F = " + reading.final);
@@ -307,7 +417,7 @@ export function formatVcReading(reading, { normalized = false } = {}) {
     lines.push(reading.fullyInlined
       ? ";; F with every name substituted:"
       : ";; F partially substituted (large shared blocks kept by name):");
-    lines.push(reading.inlined);
+    lines.push(breakFormula(reading.inlined));
   } else if (reading.definitions.length === 0) {
     lines.push(";; F = " + reading.final);
   }

@@ -17239,6 +17239,8 @@ var SUBSCRIPTS = "\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088\u2089";
 var subscript = (digits) => [...digits].map((d) => SUBSCRIPTS[Number(d)] ?? d).join("");
 function prettyName(raw) {
   let name2 = raw.startsWith("|") && raw.endsWith("|") ? raw.slice(1, -1) : raw;
+  name2 = name2.replace(/@@/g, "@");
+  if (name2.startsWith("_module.__default.")) name2 = name2.slice("_module.__default.".length);
   const match = name2.match(/^(.*?)(#(\d+))?(@(\d+))?$/);
   if (match && (match[2] || match[4])) {
     const base2 = match[1];
@@ -17287,8 +17289,20 @@ function simplify(node, counter = { eliminated: 0 }) {
   if (head === "!") {
     if (!Array.isArray(rest[0])) return rest[0];
   }
+  if ((head === "LitInt" || head === "LitReal") && rest.length === 1) return rest[0];
+  if (head === "Lit" && rest.length >= 1) return rest[rest.length - 1];
+  const inverse = COERCION_INVERSE[head];
+  if (inverse && Array.isArray(rest[0]) && rest[0][0] === inverse) return rest[0][1];
   return node;
 }
+var COERCION_INVERSE = {
+  U_2_bool: "bool_2_U",
+  bool_2_U: "U_2_bool",
+  U_2_int: "int_2_U",
+  int_2_U: "U_2_int",
+  U_2_real: "real_2_U",
+  real_2_U: "U_2_real"
+};
 var OPERATORS = {
   "<==>": { symbol: "\u27FA", precedence: 1 },
   "=>": { symbol: "\u27F9", precedence: 1, rightAssociative: true },
@@ -17304,7 +17318,12 @@ var OPERATORS = {
   "-": { symbol: "-", precedence: 5 },
   "*": { symbol: "\xB7", precedence: 6 },
   "div": { symbol: "div", precedence: 6 },
-  "mod": { symbol: "mod", precedence: 6 }
+  "mod": { symbol: "mod", precedence: 6 },
+  // Dafny's prelude wraps nonlinear arithmetic in named functions; users
+  // can't collide with the bare names (their functions are module-qualified).
+  "Mul": { symbol: "\xB7", precedence: 6 },
+  "Div": { symbol: "div", precedence: 6 },
+  "Mod": { symbol: "mod", precedence: 6 }
 };
 function print(node, contextPrecedence = 0) {
   if (!Array.isArray(node)) return prettyName(node);
@@ -17342,6 +17361,25 @@ function print(node, contextPrecedence = 0) {
   if (head === "let") {
     const bindings = (rest[0] ?? []).map((pair) => prettyName(pair[0]) + " = " + print(pair[1], 0)).join(", ");
     return "(let " + bindings + " in " + print(rest[1], 0) + ")";
+  }
+  if (typeof head === "string") {
+    const select = head.match(/^MapType(\d+)Select$/);
+    if (select && rest.length === 2 * Number(select[1]) + 4) {
+      const arity = Number(select[1]) + 1;
+      const map = rest[rest.length - arity - 1];
+      const keys = rest.slice(rest.length - arity);
+      return print(map, 7) + "[" + keys.map((key) => print(key, 0)).join(", ") + "]";
+    }
+    const store = head.match(/^MapType(\d+)Store$/);
+    if (store && rest.length === 2 * Number(store[1]) + 5) {
+      const arity = Number(store[1]) + 1;
+      const map = rest[rest.length - arity - 2];
+      const keys = rest.slice(rest.length - arity - 1, -1);
+      return print(map, 7) + "[" + keys.map((key) => print(key, 0)).join(", ") + " := " + print(rest[rest.length - 1], 0) + "]";
+    }
+    if (head === "$Unbox" && rest.length === 2) {
+      return "$Unbox(" + print(rest[1], 0) + ")";
+    }
   }
   const operator2 = OPERATORS[head];
   if (operator2 && rest.length >= 2) {
@@ -17420,11 +17458,65 @@ function readVc(vcExchangeText) {
     eliminatedControlFlow: counter.eliminated
   };
 }
+var BREAK_SEPARATORS = [" \u27FA ", " \u27F9 ", " \u2228 ", " \u2227 "];
+function topLevelSplit(text, separator) {
+  const pieces = [];
+  let depth = 0, start = 0, i2 = 0;
+  while (i2 < text.length) {
+    const ch = text[i2];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && ch === separator[0] && text.startsWith(separator, i2)) {
+      pieces.push(text.slice(start, i2));
+      i2 += separator.length;
+      start = i2;
+      continue;
+    }
+    i2++;
+  }
+  pieces.push(text.slice(start));
+  return pieces;
+}
+function breakFormula(text, indent = "", width = 100) {
+  if (indent.length + text.length <= width) return indent + text;
+  if (text.startsWith("(") && text.endsWith(")")) {
+    let depth = 0, enclosing = true;
+    for (let i2 = 0; i2 < text.length - 1 && enclosing; i2++) {
+      if (text[i2] === "(") depth++;
+      else if (text[i2] === ")") {
+        depth--;
+        if (depth === 0) enclosing = false;
+      }
+    }
+    if (enclosing) {
+      const inner = breakFormula(text.slice(1, -1), indent + " ", width);
+      return indent + "(" + inner.slice(indent.length + 1) + ")";
+    }
+  }
+  if (/^[∀∃λ] /.test(text)) {
+    const dot = topLevelSplit(text, " \xB7 ");
+    if (dot.length > 1) {
+      return indent + dot[0] + " \xB7\n" + breakFormula(dot.slice(1).join(" \xB7 "), indent + "  ", width);
+    }
+  }
+  for (const separator of BREAK_SEPARATORS) {
+    const pieces = topLevelSplit(text, separator);
+    if (pieces.length < 2) continue;
+    const symbol = separator.trim() + " ";
+    return pieces.map((piece, index) => {
+      if (index === 0) return breakFormula(piece, indent, width);
+      const branch = breakFormula(piece, indent + " ".repeat(symbol.length), width);
+      return indent + symbol + branch.slice(indent.length + symbol.length);
+    }).join("\n");
+  }
+  return indent + text;
+}
 function formatVcReading(reading, { normalized = false } = {}) {
   if (!reading) return ";; no goal found in this exchange";
   const lines = [];
   lines.push(";; the query asserts \xACF and asks for a model; unsat means F holds on every execution");
-  lines.push(";; notation only: prefix \u2192 infix, x#0@1 \u2192 x\u2081; " + reading.eliminatedControlFlow + " ControlFlow path labels elided (they number the control-flow graph so a counterexample can report its path)");
+  lines.push(";; notation only: prefix \u2192 infix, x#0@1 \u2192 x\u2081, map reads as m[k], Lit/box wrappers collapsed;");
+  lines.push(";; " + reading.eliminatedControlFlow + " ControlFlow path labels elided (they number the control-flow graph so a counterexample can report its path)");
   if (normalized) {
     lines.push(";; tip: enable 'readable names' to see source-level identifiers here");
   }
@@ -17433,7 +17525,13 @@ function formatVcReading(reading, { normalized = false } = {}) {
     lines.push(";; F, by named blocks (each let names one basic block; read bottom-up):");
     const width = Math.min(28, Math.max(...reading.definitions.map((d) => d.name.length)));
     for (const definition of reading.definitions) {
-      lines.push(definition.name.padEnd(width) + " := " + definition.text);
+      const row = definition.name.padEnd(width) + " := " + definition.text;
+      if (row.length <= 110) {
+        lines.push(row);
+      } else {
+        lines.push(definition.name + " :=");
+        lines.push(breakFormula(definition.text, "  "));
+      }
     }
     lines.push("");
     lines.push(";; F = " + reading.final);
@@ -17441,7 +17539,7 @@ function formatVcReading(reading, { normalized = false } = {}) {
   if (reading.inlined && reading.definitions.length > 0) {
     lines.push("");
     lines.push(reading.fullyInlined ? ";; F with every name substituted:" : ";; F partially substituted (large shared blocks kept by name):");
-    lines.push(reading.inlined);
+    lines.push(breakFormula(reading.inlined));
   } else if (reading.definitions.length === 0) {
     lines.push(";; F = " + reading.final);
   }
