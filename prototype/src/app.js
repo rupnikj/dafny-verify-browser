@@ -1017,11 +1017,24 @@ function updateBoogieHighlights() {
   const cursorLine = editor.state.doc.lineAt(editor.state.selection.main.head).number;
   const needle = "/input.dfy(" + cursorLine + ",";
   const marks = [];
-  const text = shown.toString();
-  let from = text.indexOf(needle);
-  while (from >= 0) {
-    marks.push(boogieMatchLine.range(shown.lineAt(from).from));
-    from = text.indexOf(needle, from + needle.length);
+  // A "// ----- <kind> ----- /input.dfy(L,C)" marker introduces the group of
+  // Boogie statements a source statement became; highlight the whole group —
+  // through to the next marker or a dedent (the enclosing block's brace).
+  for (let number = 1; number <= shown.lines; number++) {
+    const line = shown.line(number);
+    if (!(line.text.includes("// -----") && line.text.includes(needle))) continue;
+    const indent = line.text.length - line.text.trimStart().length;
+    marks.push(boogieMatchLine.range(line.from));
+    for (let next = number + 1; next <= shown.lines; next++) {
+      const candidate = shown.line(next);
+      const trimmed = candidate.text.trimStart();
+      const candidateIndent = candidate.text.length - trimmed.length;
+      if (trimmed.length === 0 || trimmed.includes("// -----") || candidateIndent < indent) {
+        number = next - 1;
+        break;
+      }
+      marks.push(boogieMatchLine.range(candidate.from));
+    }
   }
   boogieEditor.dispatch({
     effects: boogieHighlightEffect.of(Decoration.set(marks, true))
