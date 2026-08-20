@@ -111,9 +111,8 @@ const examples = {
     "}"
   ].join("\n"),
   fastfib: [
-    "// The classic payoff of verification: prove the fast iterative",
-    "// implementation equal to the obviously-correct recursive spec —",
-    "// then actually run it, right here in the browser.",
+    "// Prove the fast iterative implementation equal to the",
+    "// recursive specification, then run it.",
     "function Fib(n: nat): nat {",
     "  if n < 2 then n else Fib(n - 1) + Fib(n - 2)",
     "}",
