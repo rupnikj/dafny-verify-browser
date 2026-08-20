@@ -119,11 +119,17 @@ function parseObligations(entries) {
 
 function obligationLabel(name) {
   const [kind, path] = name.split("$$");
-  const method = (path ?? name).split(".").pop();
+  let tail = (path ?? name).split(".").pop();
+  let suffix = "";
+  const split = tail.match(/^(.*)_split(\d+)$/);
+  if (split) {
+    tail = split[1];
+    suffix = " · part " + split[2];
+  }
   const kindLabel = kind === "Impl" ? "correctness"
     : kind === "CheckWellformed" ? "well-formedness"
     : kind;
-  return method + " — " + kindLabel;
+  return tail + " — " + kindLabel + suffix;
 }
 
 function obligationVcText(obligation) {
@@ -163,6 +169,14 @@ function renderPickedObligation() {
   }
 }
 document.querySelector("#obligation-pick").addEventListener("change", renderPickedObligation);
+document.querySelector("#anatomy-isolate").addEventListener("change", () => {
+  const isolate = document.querySelector("#anatomy-isolate");
+  if (analyzeButton.disabled) {
+    isolate.checked = !isolate.checked;
+    return;
+  }
+  analyzeButton.click();
+});
 
 let dafnyPromise = null;
 function ensureDafny() {
@@ -181,8 +195,12 @@ analyzeButton.addEventListener("click", async () => {
     await ready;
     const dafny = await ensureDafny();
     status.textContent = "verifying…";
-    const result = await dafny.verify(currentProgram(),
-      { timeLimitSeconds: 0, readableNames: true, counterexamples: true });
+    const result = await dafny.verify(currentProgram(), {
+      timeLimitSeconds: 0,
+      readableNames: true,
+      counterexamples: true,
+      isolateAssertions: document.querySelector("#anatomy-isolate").checked
+    });
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
 

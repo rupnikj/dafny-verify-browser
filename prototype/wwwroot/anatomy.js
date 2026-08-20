@@ -17282,9 +17282,15 @@ function parseObligations(entries) {
 }
 function obligationLabel(name2) {
   const [kind, path] = name2.split("$$");
-  const method = (path ?? name2).split(".").pop();
+  let tail = (path ?? name2).split(".").pop();
+  let suffix = "";
+  const split = tail.match(/^(.*)_split(\d+)$/);
+  if (split) {
+    tail = split[1];
+    suffix = " \xB7 part " + split[2];
+  }
   const kindLabel = kind === "Impl" ? "correctness" : kind === "CheckWellformed" ? "well-formedness" : kind;
-  return method + " \u2014 " + kindLabel;
+  return tail + " \u2014 " + kindLabel + suffix;
 }
 function obligationVcText(obligation) {
   if (!obligation?.vc) return ";; no verification condition recorded";
@@ -17316,6 +17322,14 @@ function renderPickedObligation() {
   }
 }
 document.querySelector("#obligation-pick").addEventListener("change", renderPickedObligation);
+document.querySelector("#anatomy-isolate").addEventListener("change", () => {
+  const isolate = document.querySelector("#anatomy-isolate");
+  if (analyzeButton.disabled) {
+    isolate.checked = !isolate.checked;
+    return;
+  }
+  analyzeButton.click();
+});
 var dafnyPromise = null;
 function ensureDafny() {
   dafnyPromise ??= createDafny({
@@ -17332,10 +17346,12 @@ analyzeButton.addEventListener("click", async () => {
     await ready;
     const dafny = await ensureDafny();
     status.textContent = "verifying\u2026";
-    const result = await dafny.verify(
-      currentProgram(),
-      { timeLimitSeconds: 0, readableNames: true, counterexamples: true }
-    );
+    const result = await dafny.verify(currentProgram(), {
+      timeLimitSeconds: 0,
+      readableNames: true,
+      counterexamples: true,
+      isolateAssertions: document.querySelector("#anatomy-isolate").checked
+    });
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
     const boogieShown = boogieText ? capLines(firstImplementation(boogieText), PANE_LIMIT) : "// no translation recorded (does the program parse?)";

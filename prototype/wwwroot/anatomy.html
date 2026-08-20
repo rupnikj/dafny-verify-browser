@@ -57,6 +57,8 @@ button {
 }
 button:disabled { opacity: .55; cursor: wait; }
 #status { color: var(--muted); font-size: 13px; margin-left: 12px; }
+#obligation-row label { color: var(--muted); font-size: 13.5px; margin-left: 12px; cursor: pointer; white-space: nowrap; }
+#obligation-row input { accent-color: var(--accent-strong); }
 #obligation-pick {
   font: 14px inherit; color: var(--text); background: var(--panel);
   border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
@@ -154,7 +156,9 @@ button:disabled { opacity: .55; cursor: wait; }
   assignments), and <code>ControlFlow</code> encodes which path is taken:</p>
   <p id="obligation-row" hidden>Each obligation is checked in its own solver
   session; pick which one to inspect:
-  <select id="obligation-pick"></select></p>
+  <select id="obligation-pick"></select>
+  <label title="One obligation per assertion (dafny verify --isolate-assertions) instead of one per method — smaller formulas, more of them.">
+    <input type="checkbox" id="anatomy-isolate"> isolate assertions</label></p>
   <div class="stage pending"><div class="codeview" id="stage-smt">press “Analyze” above</div></div>
 
   <div class="arrow">▼ Z3 decides</div>

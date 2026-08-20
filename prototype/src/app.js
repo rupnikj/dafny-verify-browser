@@ -1153,6 +1153,7 @@ function buildSmtSections(entries) {
   const sections = { preamble: [], obligations: [] };
   let current = null;
   let exchange = 0;
+  let lastRlimitReading = 0;
   for (const entry of entries) {
     if (entry.kind === "problem") {
       // Boogie announces the problem AFTER transmitting its setup and
@@ -1171,7 +1172,15 @@ function buildSmtSections(entries) {
     exchange += 1;
     if (current && entry.input.includes("(get-info :rlimit)")) {
       const measured = entry.output.match(/:rlimit (\d+)/);
-      if (measured) current.rlimit = Number(measured[1]);
+      if (measured) {
+        // Z3's rlimit counter is cumulative across the whole session — even
+        // (reset) does not zero it — so the obligation's cost is the delta
+        // from the previous reading.
+        const reading = Number(measured[1]);
+        current.rlimit = reading >= lastRlimitReading
+          ? reading - lastRlimitReading : reading;
+        lastRlimitReading = reading;
+      }
     }
     const text = `;; ---- exchange ${exchange}: Boogie sends ----\n` +
       entry.input.trim() + "\n;; ---- Z3 answers ----\n" +
