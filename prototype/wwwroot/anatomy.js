@@ -17244,6 +17244,7 @@ function capLines(text, limit) {
   if (lines.length <= limit) return text;
   return lines.slice(0, limit).join("\n") + "\n\u2026 (" + (lines.length - limit) + " more lines \u2014 see the demo's Under the hood panel)";
 }
+var PANE_LIMIT = 2e3;
 function firstImplementation(boogieText) {
   const start = boogieText.indexOf("\nimplementation");
   if (start < 0) return boogieText;
@@ -17267,7 +17268,7 @@ function firstObligationVc(entries) {
   }
   if (!vcExchange) return "no verification condition recorded";
   const vc = vcExchange.input.slice(vcExchange.input.indexOf("(push 1)"));
-  return capLines(vc.trim(), 46) + "\n\n(check-sat)\n;; Z3 answers: " + (answer ?? "\u2026");
+  return capLines(vc.trim(), PANE_LIMIT) + "\n\n(check-sat)\n;; Z3 answers: " + (answer ?? "\u2026");
 }
 var dafnyPromise = null;
 function ensureDafny() {
@@ -17291,7 +17292,7 @@ analyzeButton.addEventListener("click", async () => {
     );
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
-    const boogieShown = boogieText ? capLines(firstImplementation(boogieText), 60) : "// no translation recorded (does the program parse?)";
+    const boogieShown = boogieText ? capLines(firstImplementation(boogieText), PANE_LIMIT) : "// no translation recorded (does the program parse?)";
     showCode(stageBoogie, "boogie", boogieLanguage, boogieShown);
     stageBoogie.parentElement.classList.remove("pending");
     const smtShown = Array.isArray(entries) && entries.length ? firstObligationVc(entries) : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
@@ -17316,7 +17317,7 @@ analyzeButton.addEventListener("click", async () => {
           document.querySelector("#stage-model"),
           "model",
           smtLanguage,
-          modelEntry ? capLines(modelEntry.output.trim(), 46) : ";; no model in the transcript"
+          modelEntry ? capLines(modelEntry.output.trim(), PANE_LIMIT) : ";; no model in the transcript"
         );
         document.querySelector("#stage-cex").textContent = states.length > 0 ? states.map((state) => `${state.name}${state.line ? " (line " + state.line + ")" : ""}:
   ${state.assumption}`).join("\n") : "no source-level interpretation available for this failure";

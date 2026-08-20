@@ -75,6 +75,7 @@ function capLines(text, limit) {
   return lines.slice(0, limit).join("\n") +
     "\n… (" + (lines.length - limit) + " more lines — see the demo's Under the hood panel)";
 }
+const PANE_LIMIT = 2000; // the panes scroll; this only guards pathological programs
 
 // The first implementation block of the Boogie program (ends at a
 // column-zero closing brace).
@@ -101,7 +102,7 @@ function firstObligationVc(entries) {
   }
   if (!vcExchange) return "no verification condition recorded";
   const vc = vcExchange.input.slice(vcExchange.input.indexOf("(push 1)"));
-  return capLines(vc.trim(), 46) +
+  return capLines(vc.trim(), PANE_LIMIT) +
     "\n\n(check-sat)\n;; Z3 answers: " + (answer ?? "…");
 }
 
@@ -128,7 +129,7 @@ analyzeButton.addEventListener("click", async () => {
     const entries = await dafny.getLastSmtTranscript();
 
     const boogieShown = boogieText
-      ? capLines(firstImplementation(boogieText), 60)
+      ? capLines(firstImplementation(boogieText), PANE_LIMIT)
       : "// no translation recorded (does the program parse?)";
     showCode(stageBoogie, "boogie", boogieLanguage, boogieShown);
     stageBoogie.parentElement.classList.remove("pending");
@@ -164,7 +165,7 @@ analyzeButton.addEventListener("click", async () => {
       if (modelEntry || states.length > 0) {
         modelSection.hidden = false;
         showCode(document.querySelector("#stage-model"), "model", smtLanguage,
-          modelEntry ? capLines(modelEntry.output.trim(), 46) : ";; no model in the transcript");
+          modelEntry ? capLines(modelEntry.output.trim(), PANE_LIMIT) : ";; no model in the transcript");
         document.querySelector("#stage-cex").textContent = states.length > 0
           ? states.map(state =>
               `${state.name}${state.line ? " (line " + state.line + ")" : ""}:\n  ${state.assumption}`).join("\n")
