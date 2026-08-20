@@ -311,23 +311,27 @@ const smtLanguage = StreamLanguage.define({
 
 export { dafnyLanguage, boogieLanguage, smtLanguage, dafnyHighlight, makeEditorTheme };
 
-/** A read-only themed code view (used by the anatomy page). */
-export function createReadOnlyView(parent, language, doc) {
+/** A themed code view; read-only by default (used by the anatomy page). */
+export function createCodeView(parent, language, doc, { readOnly = true, onDocChanged } = {}) {
   const dark = document.documentElement.dataset.theme !== "light";
-  return new EditorView({
-    parent,
-    state: EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        highlightSpecialChars(),
-        drawSelection(),
-        bracketMatching(),
-        language,
-        syntaxHighlighting(dafnyHighlight),
-        makeEditorTheme(dark),
-        EditorState.readOnly.of(true)
-      ]
-    })
-  });
+  const extensions = [
+    lineNumbers(),
+    highlightSpecialChars(),
+    drawSelection(),
+    bracketMatching(),
+    language,
+    syntaxHighlighting(dafnyHighlight),
+    makeEditorTheme(dark)
+  ];
+  if (readOnly) {
+    extensions.push(EditorState.readOnly.of(true));
+  }
+  if (onDocChanged) {
+    extensions.push(EditorView.updateListener.of(update => {
+      if (update.docChanged) onDocChanged();
+    }));
+  }
+  return new EditorView({ parent, state: EditorState.create({ doc, extensions }) });
 }
+
+export const createReadOnlyView = (parent, language, doc) => createCodeView(parent, language, doc);

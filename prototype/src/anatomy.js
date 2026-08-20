@@ -6,7 +6,7 @@
 // (normalization off) because this page exists to be read.
 import { createDafny } from "./dafny-browser.js";
 import { encodeShareFragment, decodeShareFragment, shareFragmentFrom } from "./share-codec.js";
-import { dafnyLanguage, boogieLanguage, smtLanguage, createReadOnlyView } from "./code-view.js";
+import { dafnyLanguage, boogieLanguage, smtLanguage, createCodeView } from "./code-view.js";
 
 const DEFAULT_PROGRAM = [
   "method Abs(x: int) returns (y: int)",
@@ -36,16 +36,35 @@ const views = {};
 function showCode(element, key, language, text) {
   views[key]?.destroy();
   element.textContent = "";
-  views[key] = createReadOnlyView(element, language, text);
+  views[key] = createCodeView(element, language, text);
 }
-ready.then(() => { showCode(stageSource, "source", dafnyLanguage, program); });
+
+// The source stage is a real editor; edits mark the later stages stale and
+// flip the button to Re-analyze.
+let analyzedOnce = false;
+function markStale() {
+  if (!analyzedOnce) return;
+  analyzeButton.textContent = "Re-analyze";
+  for (const stage of [stageBoogie, stageSmt, stageVerdict]) {
+    stage.parentElement.classList.add("stale");
+  }
+  status.textContent = "the program changed — the stages below show the previous version";
+}
+ready.then(() => {
+  stageSource.textContent = "";
+  views.source = createCodeView(stageSource, dafnyLanguage, program,
+    { readOnly: false, onDocChanged: markStale });
+});
+function currentProgram() {
+  return views.source ? views.source.state.doc.toString() : program;
+}
 
 // Both outbound links carry the current program.
 for (const id of ["open-full", "edit-link"]) {
   document.getElementById(id).addEventListener("click", async event => {
     event.preventDefault();
     const link = new URL("./", window.location.href).href +
-      "#code=" + await encodeShareFragment(program);
+      "#code=" + await encodeShareFragment(currentProgram());
     window.open(link, "_blank", "noopener");
   });
 }
@@ -103,7 +122,7 @@ analyzeButton.addEventListener("click", async () => {
     await ready;
     const dafny = await ensureDafny();
     status.textContent = "verifying…";
-    const result = await dafny.verify(program, { timeLimitSeconds: 0, readableNames: true });
+    const result = await dafny.verify(currentProgram(), { timeLimitSeconds: 0, readableNames: true });
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
 
@@ -133,7 +152,12 @@ analyzeButton.addEventListener("click", async () => {
     stageVerdict.append(detail);
     stageVerdict.parentElement.classList.remove("pending");
 
-    status.textContent = "done — every pane above is live output";
+    analyzedOnce = true;
+    analyzeButton.textContent = "Analyze";
+    for (const stage of [stageBoogie, stageSmt, stageVerdict]) {
+      stage.parentElement.classList.remove("stale");
+    }
+    status.textContent = "done";
   } catch (error) {
     status.textContent = "failed: " + String(error?.message ?? error).slice(0, 200);
   } finally {

@@ -17159,24 +17159,26 @@ var smtLanguage = StreamLanguage.define({
     return null;
   }
 });
-function createReadOnlyView(parent, language2, doc2) {
+function createCodeView(parent, language2, doc2, { readOnly: readOnly2 = true, onDocChanged } = {}) {
   const dark = document.documentElement.dataset.theme !== "light";
-  return new EditorView({
-    parent,
-    state: EditorState.create({
-      doc: doc2,
-      extensions: [
-        lineNumbers(),
-        highlightSpecialChars(),
-        drawSelection(),
-        bracketMatching(),
-        language2,
-        syntaxHighlighting(dafnyHighlight),
-        makeEditorTheme(dark),
-        EditorState.readOnly.of(true)
-      ]
-    })
-  });
+  const extensions = [
+    lineNumbers(),
+    highlightSpecialChars(),
+    drawSelection(),
+    bracketMatching(),
+    language2,
+    syntaxHighlighting(dafnyHighlight),
+    makeEditorTheme(dark)
+  ];
+  if (readOnly2) {
+    extensions.push(EditorState.readOnly.of(true));
+  }
+  if (onDocChanged) {
+    extensions.push(EditorView.updateListener.of((update) => {
+      if (update.docChanged) onDocChanged();
+    }));
+  }
+  return new EditorView({ parent, state: EditorState.create({ doc: doc2, extensions }) });
 }
 
 // src/anatomy.js
@@ -17207,15 +17209,33 @@ var views = {};
 function showCode(element, key, language2, text) {
   views[key]?.destroy();
   element.textContent = "";
-  views[key] = createReadOnlyView(element, language2, text);
+  views[key] = createCodeView(element, language2, text);
+}
+var analyzedOnce = false;
+function markStale() {
+  if (!analyzedOnce) return;
+  analyzeButton.textContent = "Re-analyze";
+  for (const stage of [stageBoogie, stageSmt, stageVerdict]) {
+    stage.parentElement.classList.add("stale");
+  }
+  status.textContent = "the program changed \u2014 the stages below show the previous version";
 }
 ready.then(() => {
-  showCode(stageSource, "source", dafnyLanguage, program);
+  stageSource.textContent = "";
+  views.source = createCodeView(
+    stageSource,
+    dafnyLanguage,
+    program,
+    { readOnly: false, onDocChanged: markStale }
+  );
 });
+function currentProgram() {
+  return views.source ? views.source.state.doc.toString() : program;
+}
 for (const id of ["open-full", "edit-link"]) {
   document.getElementById(id).addEventListener("click", async (event) => {
     event.preventDefault();
-    const link = new URL("./", window.location.href).href + "#code=" + await encodeShareFragment(program);
+    const link = new URL("./", window.location.href).href + "#code=" + await encodeShareFragment(currentProgram());
     window.open(link, "_blank", "noopener");
   });
 }
@@ -17265,7 +17285,7 @@ analyzeButton.addEventListener("click", async () => {
     await ready;
     const dafny = await ensureDafny();
     status.textContent = "verifying\u2026";
-    const result = await dafny.verify(program, { timeLimitSeconds: 0, readableNames: true });
+    const result = await dafny.verify(currentProgram(), { timeLimitSeconds: 0, readableNames: true });
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
     const boogieShown = boogieText ? capLines(firstImplementation(boogieText), 60) : "// no translation recorded (does the program parse?)";
@@ -17283,7 +17303,12 @@ analyzeButton.addEventListener("click", async () => {
     detail.textContent = `stage: ${result.stage} \u2022 ${result.smtExchangeCount} SMT exchanges \u2022 all computed in this browser tab`;
     stageVerdict.append(detail);
     stageVerdict.parentElement.classList.remove("pending");
-    status.textContent = "done \u2014 every pane above is live output";
+    analyzedOnce = true;
+    analyzeButton.textContent = "Analyze";
+    for (const stage of [stageBoogie, stageSmt, stageVerdict]) {
+      stage.parentElement.classList.remove("stale");
+    }
+    status.textContent = "done";
   } catch (error) {
     status.textContent = "failed: " + String(error?.message ?? error).slice(0, 200);
   } finally {

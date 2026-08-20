@@ -49,6 +49,7 @@ pre {
 }
 .stage { border-left: 3px solid var(--border); padding-left: 18px; margin: 26px 0; }
 .stage.pending pre { color: var(--muted); }
+.stage.stale { opacity: .55; }
 .arrow { text-align: center; color: var(--muted); font-size: 13px; margin: 18px 0; }
 button {
   font: 600 15px/1 inherit; color: #fff; background: var(--accent-strong);
@@ -102,26 +103,26 @@ button:disabled { opacity: .55; cursor: wait; }
     <a id="open-full" href="./" target="_blank" rel="noopener">Edit in Dafny Verify ↗</a>
   </div>
 
-  <h1>What actually happens when Dafny verifies your program</h1>
-  <p class="subtitle">One program, dissected live — every stage below is computed
-  in your browser by the real Dafny, Boogie, and Z3, not illustrated.</p>
+  <h1>What happens when Dafny verifies a program</h1>
+  <p class="subtitle">This page runs the verification pipeline in your browser
+  and shows the intermediate artifact of each stage.</p>
 
-  <p>Dafny's promise sounds like magic: write a specification, and the tool
-  <em>proves</em> your code meets it — for every input, not just the ones you
-  tested. The machinery behind that promise is a pipeline of three translations,
-  each mechanical, each inspectable. Press the button and watch your program go
-  through all of them.</p>
+  <p>Dafny checks that a program meets its specification on every possible
+  input. It does this by translating the program twice — first into the Boogie
+  verification language, then into a logical formula — and asking the Z3
+  solver whether that formula can be violated. Each translation is mechanical,
+  and each can be inspected below.</p>
 
-  <p><button id="analyze" type="button">Analyze this program</button><span id="status">the verifier (~35 MB compressed) downloads on first use — cached afterwards</span></p>
-
-  <h2>Stage 1 — Your program: code plus claims</h2>
-  <p>A Dafny program mixes two languages: the <em>code</em> (assignments, ifs,
-  loops) and the <em>specification</em> (<code>ensures</code>,
-  <code>requires</code>, <code>invariant</code>). The specification is a claim
-  about every possible execution. This is the program being dissected — edit it
-  in the <a id="edit-link" href="./">full demo</a> and reopen this page from
-  there to dissect your own:</p>
+  <h2>Stage 1 — The program and its specification</h2>
+  <p>A Dafny program contains both code (assignments, branches, loops) and
+  specification (<code>requires</code>, <code>ensures</code>,
+  <code>invariant</code>). The specification states what must hold on every
+  execution. The program below is editable — change it and run the pipeline
+  again (the <a id="edit-link" href="./">full demo</a> has examples to start
+  from):</p>
   <div class="stage"><div class="codeview" id="stage-source">loading…</div></div>
+
+  <p><button id="analyze" type="button">Analyze</button><span id="status">the verifier (~35 MB compressed) downloads on first use — cached afterwards</span></p>
 
   <div class="arrow">▼ parse · resolve · translate</div>
 
@@ -151,22 +152,19 @@ button:disabled { opacity: .55; cursor: wait; }
 
   <div class="arrow">▼ Z3 decides</div>
 
-  <h2>Stage 4 — The verdict, by double negation</h2>
-  <p>Z3 hunts for a way to satisfy that formula — that is, for a concrete
-  execution that breaks your specification. The two possible answers:</p>
-  <p><code>unsat</code> — <em>no such execution exists</em>. No input, no path,
-  no heap can violate the claim. That is what “verified” means: not “tests
-  passed”, but “a counterexample is mathematically impossible”.<br>
-  <code>sat</code> — the solver found a witness, and Dafny turns its model into
-  the counterexample you see in the demo's Problems tab.</p>
+  <h2>Stage 4 — The verdict</h2>
+  <p>Z3 searches for an assignment that satisfies the formula — that is, for a
+  concrete execution in which one of the claims fails. Two answers are
+  possible:</p>
+  <p><code>unsat</code> — the formula cannot be satisfied. There is no
+  execution in which a claim fails, so the program is verified; unlike
+  testing, this covers every input.<br>
+  <code>sat</code> — the solver found such an execution. Dafny reads the
+  solver's model back and presents it as a counterexample (the demo's
+  Problems tab renders these).</p>
   <div class="stage pending"><pre id="stage-verdict">press “Analyze” above</pre></div>
 
-  <p class="note">Everything above ran in this tab — the same Dafny 4.11.0,
-  Boogie 3.5.5, and Z3 4.16.0 a native install uses, compiled to WebAssembly.
-  Names are shown unnormalized for readability; the demo's
-  “Under the hood” panel has the byte-faithful default, the full transcripts,
-  and the compiled-to-JavaScript view.
-  <a href="https://github.com/rupnikj/dafny-verify-browser">Source on GitHub</a>.</p>
+  <p class="note"><a href="https://github.com/rupnikj/dafny-verify-browser">Source on GitHub</a></p>
 </div>
 <script type="module" src="./anatomy.js"></script>
 </body>
