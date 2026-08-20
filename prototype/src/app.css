@@ -652,9 +652,10 @@ body.tutorial-on .panel {
   top: 0;
   z-index: 3;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 4px 10px;
   padding: 6px 10px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-soft);

@@ -7,6 +7,7 @@
 import { createDafny } from "./dafny-browser.js";
 import { encodeShareFragment, decodeShareFragment, shareFragmentFrom } from "./share-codec.js";
 import { dafnyLanguage, boogieLanguage, smtLanguage, createCodeView } from "./code-view.js";
+import { readVc, formatVcReading } from "./vc-reader.js";
 
 const DEFAULT_PROGRAM = [
   "method Abs(x: int) returns (y: int)",
@@ -152,7 +153,13 @@ function renderPickedObligation() {
     ? obligationVcText(obligation)
     : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
   showCode(stageSmt, "smt", smtLanguage, smtShown);
-  window.__anatomy = { ...(window.__anatomy ?? {}), smt: smtShown };
+  const formulaText = obligation?.vc
+    ? formatVcReading(readVc(obligation.vc.input))
+    : ";; no verification condition to render";
+  const stageFormula = document.querySelector("#stage-formula");
+  showCode(stageFormula, "formula", smtLanguage, formulaText);
+  stageFormula.parentElement.classList.remove("pending");
+  window.__anatomy = { ...(window.__anatomy ?? {}), smt: smtShown, formula: formulaText };
 
   const modelSection = document.querySelector("#model-section");
   if (obligation?.model) {

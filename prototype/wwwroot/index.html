@@ -229,6 +229,10 @@
               <label class="sr-only" for="smt-obligation">Proof obligation</label>
               <select id="smt-obligation" hidden></select>
               <label class="readable-toggle"
+                title="Render the selected obligation's verification condition readably: infix operators, x#0@1 → x₁, ControlFlow labels elided, let-bound blocks as a definitions table. Notation only — every hypothesis is kept.">
+                <input type="checkbox" id="smt-formula"> formula view
+              </label>
+              <label class="readable-toggle"
                 title="One proof obligation per assertion (dafny verify --isolate-assertions): see which claim costs what. Exploration mode — more, smaller queries.">
                 <input type="checkbox" id="smt-isolate"> isolate assertions
               </label>

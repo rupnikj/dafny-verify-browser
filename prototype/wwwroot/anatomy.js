@@ -14559,9 +14559,9 @@ var Parser = class {
   Run a full parse, returning the resulting tree.
   */
   parse(input, fragments, ranges) {
-    let parse = this.startParse(input, fragments, ranges);
+    let parse2 = this.startParse(input, fragments, ranges);
     for (; ; ) {
-      let done = parse.advance();
+      let done = parse2.advance();
       if (done)
         return done;
     }
@@ -17181,6 +17181,273 @@ function createCodeView(parent, language2, doc2, { readOnly: readOnly2 = true, o
   return new EditorView({ parent, state: EditorState.create({ doc: doc2, extensions }) });
 }
 
+// src/vc-reader.js
+function tokenize(text) {
+  const tokens = [];
+  let i2 = 0;
+  while (i2 < text.length) {
+    const ch = text[i2];
+    if (ch === "(" || ch === ")") {
+      tokens.push(ch);
+      i2++;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      i2++;
+      continue;
+    }
+    if (ch === ";") {
+      while (i2 < text.length && text[i2] !== "\n") i2++;
+      continue;
+    }
+    if (ch === "|") {
+      let j2 = text.indexOf("|", i2 + 1);
+      if (j2 < 0) j2 = text.length;
+      tokens.push(text.slice(i2, j2 + 1));
+      i2 = j2 + 1;
+      continue;
+    }
+    if (ch === '"') {
+      let j2 = i2 + 1;
+      while (j2 < text.length && text[j2] !== '"') j2++;
+      tokens.push(text.slice(i2, j2 + 1));
+      i2 = j2 + 1;
+      continue;
+    }
+    let j = i2;
+    while (j < text.length && !/[\s()|;"]/.test(text[j])) j++;
+    tokens.push(text.slice(i2, j));
+    i2 = j;
+  }
+  return tokens;
+}
+function parse(tokens) {
+  let position = 0;
+  function node() {
+    const token = tokens[position++];
+    if (token !== "(") return token;
+    const children = [];
+    while (position < tokens.length && tokens[position] !== ")") children.push(node());
+    position++;
+    return children;
+  }
+  const roots = [];
+  while (position < tokens.length) roots.push(node());
+  return roots;
+}
+var SUBSCRIPTS = "\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088\u2089";
+var subscript = (digits) => [...digits].map((d) => SUBSCRIPTS[Number(d)] ?? d).join("");
+function prettyName(raw) {
+  let name2 = raw.startsWith("|") && raw.endsWith("|") ? raw.slice(1, -1) : raw;
+  const match = name2.match(/^(.*?)(#(\d+))?(@(\d+))?$/);
+  if (match && (match[2] || match[4])) {
+    const base2 = match[1];
+    const hash = match[3];
+    const version = match[5];
+    if (base2.length > 0) {
+      name2 = base2 + (hash && hash !== "0" ? "#" + hash : "") + (version !== void 0 ? subscript(version) : "");
+    }
+  }
+  return name2;
+}
+var isControlFlowLabel = (node) => Array.isArray(node) && node[0] === "=" && node.slice(1).some((argument) => Array.isArray(argument) && argument[0] === "ControlFlow");
+function simplify(node, counter = { eliminated: 0 }) {
+  if (!Array.isArray(node)) return node;
+  if (isControlFlowLabel(node)) {
+    counter.eliminated++;
+    return "true";
+  }
+  node = node.map((child) => simplify(child, counter));
+  const [head, ...rest] = node;
+  if (head === "and") {
+    const kept = rest.filter((argument) => argument !== "true");
+    if (kept.length === 0) return "true";
+    if (kept.includes("false")) return "false";
+    if (kept.length === 1) return kept[0];
+    return ["and", ...kept];
+  }
+  if (head === "or") {
+    const kept = rest.filter((argument) => argument !== "false");
+    if (kept.length === 0) return "false";
+    if (kept.includes("true")) return "true";
+    if (kept.length === 1) return kept[0];
+    return ["or", ...kept];
+  }
+  if (head === "=>") {
+    const body = rest[rest.length - 1];
+    const hypotheses = rest.slice(0, -1).filter((h) => h !== "true");
+    if (body === "true") return "true";
+    if (hypotheses.length === 0) return body;
+    return ["=>", ...hypotheses, body];
+  }
+  if (head === "not") {
+    if (rest[0] === "true") return "false";
+    if (rest[0] === "false") return "true";
+  }
+  if (head === "!") {
+    if (!Array.isArray(rest[0])) return rest[0];
+  }
+  return node;
+}
+var OPERATORS = {
+  "<==>": { symbol: "\u27FA", precedence: 1 },
+  "=>": { symbol: "\u27F9", precedence: 1, rightAssociative: true },
+  "or": { symbol: "\u2228", precedence: 2 },
+  "and": { symbol: "\u2227", precedence: 3 },
+  "=": { symbol: "=", precedence: 4 },
+  "distinct": { symbol: "\u2260", precedence: 4 },
+  "<": { symbol: "<", precedence: 4 },
+  "<=": { symbol: "\u2264", precedence: 4 },
+  ">": { symbol: ">", precedence: 4 },
+  ">=": { symbol: "\u2265", precedence: 4 },
+  "+": { symbol: "+", precedence: 5 },
+  "-": { symbol: "-", precedence: 5 },
+  "*": { symbol: "\xB7", precedence: 6 },
+  "div": { symbol: "div", precedence: 6 },
+  "mod": { symbol: "mod", precedence: 6 }
+};
+function print(node, contextPrecedence = 0) {
+  if (!Array.isArray(node)) return prettyName(node);
+  const [head, ...rest] = node;
+  if ((head === "LitInt" || head === "LitReal") && rest.length === 1) {
+    return print(rest[0], contextPrecedence);
+  }
+  if (head === "-" && rest.length === 2 && rest[0] === "0") {
+    return "-" + print(rest[1], 7);
+  }
+  if (head === "-" && rest.length === 1) {
+    return "-" + print(rest[0], 7);
+  }
+  if (head === "not") {
+    return "\xAC" + print(rest[0], 7);
+  }
+  if (head === "ite") {
+    return "(if " + print(rest[0], 0) + " then " + print(rest[1], 0) + " else " + print(rest[2], 0) + ")";
+  }
+  if (head === "forall" || head === "exists" || head === "lambda") {
+    const quantifier = head === "forall" ? "\u2200" : head === "exists" ? "\u2203" : "\u03BB";
+    const variables = (rest[0] ?? []).map((pair) => Array.isArray(pair) ? prettyName(pair[0]) + ": " + print(pair[1], 0) : print(pair, 0)).join(", ");
+    const body = print(rest[rest.length - 1], 0);
+    const text = quantifier + " " + variables + " \xB7 " + body;
+    return contextPrecedence > 0 ? "(" + text + ")" : text;
+  }
+  if (head === "!") {
+    const body = print(rest[0], contextPrecedence);
+    const patterns = [];
+    for (let i2 = 1; i2 < rest.length - 1; i2++) {
+      if (rest[i2] === ":pattern") patterns.push(print(rest[i2 + 1], 0));
+    }
+    return patterns.length > 0 ? body + " \u27E8pattern " + patterns.join(", ") + "\u27E9" : body;
+  }
+  if (head === "let") {
+    const bindings = (rest[0] ?? []).map((pair) => prettyName(pair[0]) + " = " + print(pair[1], 0)).join(", ");
+    return "(let " + bindings + " in " + print(rest[1], 0) + ")";
+  }
+  const operator2 = OPERATORS[head];
+  if (operator2 && rest.length >= 2) {
+    const parts = rest.map((argument, index) => {
+      const bump = operator2.rightAssociative ? index === rest.length - 1 ? 0 : 1 : index === 0 ? 0 : 1;
+      return print(argument, operator2.precedence + bump);
+    });
+    const text = parts.join(" " + operator2.symbol + " ");
+    return contextPrecedence > operator2.precedence ? "(" + text + ")" : text;
+  }
+  if (typeof head === "string") {
+    return prettyName(head) + "(" + rest.map((argument) => print(argument, 0)).join(", ") + ")";
+  }
+  return "(" + node.map((child) => print(child, 0)).join(" ") + ")";
+}
+function collectLets(node, bindings) {
+  while (Array.isArray(node) && node[0] === "let") {
+    for (const [name2, value] of node[1]) bindings.push({ name: name2, value });
+    node = node[2];
+  }
+  return node;
+}
+function substitute(node, replacements) {
+  if (!Array.isArray(node)) return replacements.get(node) ?? node;
+  return node.map((child) => substitute(child, replacements));
+}
+function countUses(node, name2, limit = 3) {
+  if (!Array.isArray(node)) return node === name2 ? 1 : 0;
+  let count = 0;
+  for (const child of node) {
+    count += countUses(child, name2, limit);
+    if (count >= limit) return count;
+  }
+  return count;
+}
+var INLINE_LIMIT = 24e3;
+function readVc(vcExchangeText) {
+  const goalStart = vcExchangeText.lastIndexOf("(assert (not");
+  if (goalStart < 0) return null;
+  const roots = parse(tokenize(vcExchangeText.slice(goalStart)));
+  const assertNode = roots[0];
+  if (!Array.isArray(assertNode) || assertNode[0] !== "assert") return null;
+  const counter = { eliminated: 0 };
+  const body = simplify(assertNode[1][1], counter);
+  const bindings = [];
+  const finalNode = collectLets(body, bindings);
+  const definitions = bindings.map(({ name: name2, value }) => ({
+    name: prettyName(name2),
+    text: print(value, 0)
+  }));
+  const replacements = /* @__PURE__ */ new Map();
+  let fullyInlined = true;
+  for (const { name: name2, value } of bindings) {
+    const resolved = substitute(value, replacements);
+    const size = print(resolved, 0).length;
+    const uses = countUses(finalNode, name2) + bindings.reduce((total, other) => total + (other.name === name2 ? 0 : countUses(other.value, name2)), 0);
+    if (size > 120 && uses > 1) {
+      fullyInlined = false;
+      continue;
+    }
+    replacements.set(name2, resolved);
+  }
+  let inlined = null;
+  const inlinedNode = simplify(substitute(finalNode, replacements));
+  const inlinedText = print(inlinedNode, 0);
+  if (inlinedText.length <= INLINE_LIMIT) {
+    inlined = inlinedText;
+  } else {
+    fullyInlined = false;
+  }
+  return {
+    definitions,
+    final: print(finalNode, 0),
+    inlined,
+    fullyInlined,
+    eliminatedControlFlow: counter.eliminated
+  };
+}
+function formatVcReading(reading, { normalized = false } = {}) {
+  if (!reading) return ";; no goal found in this exchange";
+  const lines = [];
+  lines.push(";; the query asserts \xACF and asks for a model; unsat means F holds on every execution");
+  lines.push(";; notation only: prefix \u2192 infix, x#0@1 \u2192 x\u2081; " + reading.eliminatedControlFlow + " ControlFlow path labels elided (they number the control-flow graph so a counterexample can report its path)");
+  if (normalized) {
+    lines.push(";; tip: enable 'readable names' to see source-level identifiers here");
+  }
+  lines.push("");
+  if (reading.definitions.length > 0) {
+    lines.push(";; F, by named blocks (each let names one basic block; read bottom-up):");
+    const width = Math.min(28, Math.max(...reading.definitions.map((d) => d.name.length)));
+    for (const definition of reading.definitions) {
+      lines.push(definition.name.padEnd(width) + " := " + definition.text);
+    }
+    lines.push("");
+    lines.push(";; F = " + reading.final);
+  }
+  if (reading.inlined && reading.definitions.length > 0) {
+    lines.push("");
+    lines.push(reading.fullyInlined ? ";; F with every name substituted:" : ";; F partially substituted (large shared blocks kept by name):");
+    lines.push(reading.inlined);
+  } else if (reading.definitions.length === 0) {
+    lines.push(";; F = " + reading.final);
+  }
+  return lines.join("\n");
+}
+
 // src/anatomy.js
 var DEFAULT_PROGRAM = [
   "method Abs(x: int) returns (y: int)",
@@ -17304,7 +17571,11 @@ function renderPickedObligation() {
   const obligation = obligations[Number(picker.value)] ?? obligations[0];
   const smtShown = obligation ? obligationVcText(obligation) : ";; no SMT exchange recorded (nothing needed proving, or verification stopped earlier)";
   showCode(stageSmt, "smt", smtLanguage, smtShown);
-  window.__anatomy = { ...window.__anatomy ?? {}, smt: smtShown };
+  const formulaText = obligation?.vc ? formatVcReading(readVc(obligation.vc.input)) : ";; no verification condition to render";
+  const stageFormula = document.querySelector("#stage-formula");
+  showCode(stageFormula, "formula", smtLanguage, formulaText);
+  stageFormula.parentElement.classList.remove("pending");
+  window.__anatomy = { ...window.__anatomy ?? {}, smt: smtShown, formula: formulaText };
   const modelSection = document.querySelector("#model-section");
   if (obligation?.model) {
     modelSection.hidden = false;

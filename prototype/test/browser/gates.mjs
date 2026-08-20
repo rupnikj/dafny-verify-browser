@@ -256,6 +256,15 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   if (obligationOptions < 2) {
     throw new Error("SMT obligation picker missing options: " + obligationOptions);
   }
+  // Formula view: the selected obligation's VC rendered infix, blocks as a
+  // definitions table, ControlFlow eliminated.
+  await page.click("#smt-formula");
+  await page.waitForFunction(() => typeof window.__vcText === "string", undefined, { timeout: 10000 });
+  const vcText = await page.evaluate(() => window.__vcText);
+  if (!vcText.includes("⟹") || !vcText.includes(":=") || !vcText.includes("ControlFlow path labels elided")) {
+    throw new Error("formula view malformed: " + vcText.slice(0, 200));
+  }
+  await page.click("#smt-formula");
   // Method-level cross-link: picking an obligation selects its declaration
   // in the editor (Fib lives on line 3 of the FastFib example).
   await page.selectOption("#smt-obligation", "0");
@@ -455,6 +464,10 @@ await gate("anatomy: the pipeline essay computes all stages live", async page =>
   if (!stages.boogie.includes("implementation") || !stages.smt.includes("(push 1)") ||
       !stages.smt.includes("unsat") || !stages.verdict.includes("verified")) {
     throw new Error("anatomy stages incomplete");
+  }
+  const formula = await page.evaluate(() => window.__anatomy?.formula ?? "");
+  if (!formula.includes("⟹") || !formula.includes(":=")) {
+    throw new Error("anatomy formula stage malformed: " + formula.slice(0, 200));
   }
   // A failing program reveals the counterexample chapter.
   await page.click("#stage-source .cm-content");

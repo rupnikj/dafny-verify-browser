@@ -37,6 +37,7 @@ import { createDafny } from "./dafny-browser.js";
 import { runCompiled } from "./dafny-runner.js";
 import { encodeShareFragment, decodeShareFragment, shareFragmentFrom } from "./share-codec.js";
 import { dafnyLanguage, boogieLanguage, smtLanguage, dafnyHighlight, makeEditorTheme } from "./code-view.js";
+import { readVc, formatVcReading } from "./vc-reader.js";
 
 const examples = {
   abs: [
@@ -1126,6 +1127,8 @@ let smtSections = null;
 const smtObligationSelect = document.querySelector("#smt-obligation");
 const smtReadable = document.querySelector("#smt-readable");
 const smtHidePrelude = document.querySelector("#smt-hide-prelude");
+const smtFormula = document.querySelector("#smt-formula");
+smtFormula.addEventListener("change", () => renderSmtSlice());
 const smtIsolate = document.querySelector("#smt-isolate");
 smtIsolate.addEventListener("change", () => {
   if (running || runInFlight) {
@@ -1154,6 +1157,7 @@ function buildSmtSections(entries) {
   let current = null;
   let exchange = 0;
   let lastRlimitReading = 0;
+  let lastVcInput = null;
   for (const entry of entries) {
     if (entry.kind === "problem") {
       // Boogie announces the problem AFTER transmitting its setup and
@@ -1165,11 +1169,15 @@ function buildSmtSections(entries) {
         if (previousParts[i].includes("(pop 1)")) { split = i + 1; break; }
         if (i === 0) split = 0;
       }
-      current = { name: entry.input, parts: previousParts.splice(split) };
+      current = { name: entry.input, parts: previousParts.splice(split), vcInput: lastVcInput };
+      lastVcInput = null;
       sections.obligations.push(current);
       continue;
     }
     exchange += 1;
+    if (entry.input.includes("(push 1)")) {
+      lastVcInput = entry.input;
+    }
     if (current && entry.input.includes("(get-info :rlimit)")) {
       const measured = entry.output.match(/:rlimit (\d+)/);
       if (measured) {
@@ -1273,6 +1281,19 @@ function renderSmtSlice() {
     const obligation = smtSections.obligations[Number(choice)];
     parts = obligation ? obligation.parts : [];
     label = obligation ? obligation.parts.length + " exchange" + (obligation.parts.length === 1 ? "" : "s") : "";
+  }
+  if (smtFormula.checked && choice !== "preamble" && choice !== "all") {
+    const obligation = smtSections.obligations[Number(choice)];
+    const reading = obligation?.vcInput ? readVc(obligation.vcInput) : null;
+    const formulaText = formatVcReading(reading,
+      { normalized: !!obligation?.vcInput?.includes("$generated") });
+    window.__vcText = formulaText;
+    smtNote.textContent = "formula view — notation only, every hypothesis kept";
+    smtEditor.dispatch({
+      changes: { from: 0, to: smtEditor.state.doc.length, insert: formulaText },
+      effects: closeHoverTooltips
+    });
+    return;
   }
   let text = parts.join("");
   if (choice !== "preamble" && choice !== "all" && smtHidePrelude.checked) {

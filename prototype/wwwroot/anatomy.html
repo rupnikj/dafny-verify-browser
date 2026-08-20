@@ -162,6 +162,15 @@ button:disabled { opacity: .55; cursor: wait; }
     <input type="checkbox" id="anatomy-isolate"> isolate assertions</label></p>
   <div class="stage pending"><div class="codeview" id="stage-smt">press “Analyze” above</div></div>
 
+  <p>Prefix notation is for machines. The same formula again, with operators
+  infix, SSA versions as subscripts (<code>y#0@1</code> → <code>y₁</code>),
+  and the <code>ControlFlow</code> labels removed — they number the
+  control-flow graph so a counterexample can report its path, and carry no
+  other content. Each <code>let</code> names one basic block; read the
+  definitions bottom-up (the last one is the method entry). The heap
+  hypotheses are kept: they are part of what the proof may assume.</p>
+  <div class="stage pending"><div class="codeview" id="stage-formula">press “Analyze” above</div></div>
+
   <div class="arrow">▼ Z3 decides</div>
 
   <h2>Stage 4 — The verdict</h2>

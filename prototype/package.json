@@ -10,7 +10,7 @@
     "test:module": "node test/dafny-browser-module.mjs",
     "test:wasm": "node test/full-wasm.mjs",
     "test:browser": "node test/browser/gates.mjs",
-    "test:transport": "node test/z3-st-transport-test.mjs && node test/z3-api-transport-test.mjs && node test/z3-transport-equivalence-test.mjs && node test/inline-parity.mjs"
+    "test:transport": "node test/z3-st-transport-test.mjs && node test/z3-api-transport-test.mjs && node test/z3-transport-equivalence-test.mjs && node test/inline-parity.mjs && node test/vc-reader-test.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
