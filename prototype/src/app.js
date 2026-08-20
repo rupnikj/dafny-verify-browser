@@ -680,6 +680,9 @@ editor = new EditorView({
           clearResultForEdit();
           scheduleLiveVerify();
         }
+        if (update.selectionSet && !update.docChanged) {
+          updateBoogieHighlights();
+        }
       })
     ]
   })
@@ -946,6 +949,20 @@ function closeTooltipsOnLeave(view) {
   return view;
 }
 
+const boogieHighlightEffect = StateEffect.define();
+const boogieHighlightField = StateField.define({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    value = value.map(transaction.changes);
+    for (const effect of transaction.effects) {
+      if (effect.is(boogieHighlightEffect)) value = effect.value;
+    }
+    return value;
+  },
+  provide: field => EditorView.decorations.from(field)
+});
+const boogieMatchLine = Decoration.line({ class: "cm-src-match" });
+
 let boogieEditor = null;
 let boogieDirty = false;
 let boogieFullText = "";
@@ -988,6 +1005,47 @@ function renderBoogieView() {
       effects: EditorView.scrollIntoView(target, { y: "center" })
     });
   }
+  updateBoogieHighlights();
+}
+
+// Dafny -> Boogie: mark every line whose nearest breadcrumb names the
+// editor-cursor's line (one Dafny statement legitimately expands to several
+// Boogie sites — wellformedness, implementation, bookkeeping).
+function updateBoogieHighlights() {
+  if (!boogieEditor || boogieView.hidden) return;
+  const shown = boogieEditor.state.doc;
+  const cursorLine = editor.state.doc.lineAt(editor.state.selection.main.head).number;
+  const needle = "/input.dfy(" + cursorLine + ",";
+  const marks = [];
+  const text = shown.toString();
+  let from = text.indexOf(needle);
+  while (from >= 0) {
+    marks.push(boogieMatchLine.range(shown.lineAt(from).from));
+    from = text.indexOf(needle, from + needle.length);
+  }
+  boogieEditor.dispatch({
+    effects: boogieHighlightEffect.of(Decoration.set(marks, true))
+  });
+}
+
+// Boogie -> Dafny: a click in the pane jumps the editor to the nearest
+// preceding breadcrumb's source position.
+function wireBoogieClickBack() {
+  boogieEditor.dom.addEventListener("pointerup", () => {
+    const selection = boogieEditor.state.selection.main;
+    if (!selection.empty) return; // a drag-selection is a copy, not a jump
+    const before = boogieEditor.state.doc.sliceString(0, selection.head);
+    const match = [...before.matchAll(/\/input\.dfy\((\d+),(\d+)\)/g)].pop();
+    if (!match) return;
+    const line = Number(match[1]);
+    if (line < 1 || line > editor.state.doc.lines) return;
+    const target = editor.state.doc.line(line);
+    const position = Math.min(target.from + Number(match[2]), target.to);
+    editor.dispatch({
+      selection: { anchor: position },
+      effects: EditorView.scrollIntoView(position, { y: "center" })
+    });
+  });
 }
 
 async function renderBoogie() {
@@ -1016,6 +1074,7 @@ async function renderBoogie() {
             bracketMatching(),
             search({ top: true }),
             boogieLanguage,
+            boogieHighlightField,
             glossaryHover,
             syntaxHighlighting(dafnyHighlight),
             themedEditorExtension(() => boogieEditor),
@@ -1024,6 +1083,10 @@ async function renderBoogie() {
           ]
         })
       }));
+    }
+    if (!boogieEditor.dafnyClickBackWired) {
+      boogieEditor.dafnyClickBackWired = true;
+      wireBoogieClickBack();
     }
     renderBoogieView();
   } catch (error) {

@@ -1070,3 +1070,5 @@ body.tutorial-on .panel {
   white-space: nowrap;
 }
 .readable-toggle input { accent-color: var(--accent-mid); margin: 0; }
+
+.cm-src-match { background: var(--accent-tint); }
