@@ -164,6 +164,19 @@ button:disabled { opacity: .55; cursor: wait; }
   Problems tab renders these).</p>
   <div class="stage pending"><pre id="stage-verdict">press “Analyze” above</pre></div>
 
+  <div id="model-section" hidden>
+    <h2>The counterexample</h2>
+    <p>For this program the solver answered <code>sat</code>: it found concrete
+    values under which a claim fails. Its answer to <code>(get-model)</code> is
+    below — an assignment for every symbol in the formula:</p>
+    <div class="stage"><div class="codeview" id="stage-model">…</div></div>
+    <p>Most of those symbols are encoding internals. Dafny reads the model,
+    keeps the entries that correspond to source-level variables, and attaches
+    them to program points — the same trace the demo shows in its Problems
+    tab:</p>
+    <div class="stage"><pre id="stage-cex"></pre></div>
+  </div>
+
   <p class="note"><a href="https://github.com/rupnikj/dafny-verify-browser">Source on GitHub</a></p>
 </div>
 <script type="module" src="./anatomy.js"></script>

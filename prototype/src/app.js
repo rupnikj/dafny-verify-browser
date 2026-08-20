@@ -1038,6 +1038,14 @@ let smtSections = null;
 const smtObligationSelect = document.querySelector("#smt-obligation");
 const smtReadable = document.querySelector("#smt-readable");
 const smtHidePrelude = document.querySelector("#smt-hide-prelude");
+const smtIsolate = document.querySelector("#smt-isolate");
+smtIsolate.addEventListener("change", () => {
+  if (running || runInFlight) {
+    smtIsolate.checked = !smtIsolate.checked;
+    return;
+  }
+  runVerification({ live: true });
+});
 smtHidePrelude.addEventListener("change", () => renderSmtSlice());
 
 smtReadable.addEventListener("change", () => {
@@ -1073,6 +1081,10 @@ function buildSmtSections(entries) {
       continue;
     }
     exchange += 1;
+    if (current && entry.input.includes("(get-info :rlimit)")) {
+      const measured = entry.output.match(/:rlimit (\d+)/);
+      if (measured) current.rlimit = Number(measured[1]);
+    }
     const text = `;; ---- exchange ${exchange}: Boogie sends ----\n` +
       entry.input.trim() + "\n;; ---- Z3 answers ----\n" +
       entry.output.trim().split("\n").map(line => ";;   " + line).join("\n") + "\n\n";
@@ -1086,11 +1098,27 @@ function buildSmtSections(entries) {
 // obligation kind, and link both ways with the editor (method level).
 function obligationParts(name) {
   const [kind, path] = name.split("$$");
-  const method = (path ?? name).split(".").pop();
-  const kindLabel = kind === "Impl" ? "correctness"
+  let tail = (path ?? name).split(".").pop();
+  let suffix = "";
+  const split = tail.match(/^(.*)_split(\d+)$/); // --isolate-assertions naming
+  if (split) {
+    tail = split[1];
+    suffix = "part " + split[2];
+  }
+  const [method, ...rest] = tail.split("/");
+  if (rest.length) suffix = (suffix ? suffix + " " : "") + rest.join("/");
+  const kindLabel = (kind === "Impl" ? "correctness"
     : kind === "CheckWellformed" ? "well-formedness"
-    : kind;
+    : kind) + (suffix ? " · " + suffix : "");
   return { method, kindLabel };
+}
+
+// Z3's rlimit is a deterministic cost counter — the honest "how expensive
+// was this proof" metric, unlike wall-clock.
+function formatRlimit(value) {
+  if (value >= 1e6) return (value / 1e6).toFixed(1) + "M rlimit";
+  if (value >= 1e3) return Math.round(value / 1e3) + "k rlimit";
+  return value + " rlimit";
 }
 
 function obligationLabel(name) {
@@ -1204,7 +1232,8 @@ async function renderSmtTranscript() {
     for (const [index, obligation] of smtSections.obligations.entries()) {
       const option = document.createElement("option");
       option.value = String(index);
-      option.textContent = obligationLabel(obligation.name);
+      option.textContent = obligationLabel(obligation.name) +
+        (obligation.rlimit ? " · " + formatRlimit(obligation.rlimit) : "");
       option.title = obligation.name;
       smtObligationSelect.append(option);
     }
@@ -1644,7 +1673,8 @@ async function runVerification(options = {}) {
   try {
     const timeLimitSeconds = Number(document.querySelector("#time-limit").value) || 0;
     showVerificationResult(await verify(editor.state.doc.toString(),
-      { timeLimitSeconds, counterexamples: true, readableNames: smtReadable.checked }));
+      { timeLimitSeconds, counterexamples: true,
+        readableNames: smtReadable.checked, isolateAssertions: smtIsolate.checked }));
   } catch (error) {
     if (String(error?.message) === "cancelled") {
       resultSummary.className = "result-summary is-idle";
@@ -1816,7 +1846,8 @@ async function runProgram() {
     const source = editor.state.doc.toString();
     const limitValue = Number(document.querySelector("#time-limit").value) || 0;
     const verification = await verify(source,
-      { timeLimitSeconds: limitValue, counterexamples: true, readableNames: smtReadable.checked });
+      { timeLimitSeconds: limitValue, counterexamples: true,
+        readableNames: smtReadable.checked, isolateAssertions: smtIsolate.checked });
     showVerificationResult(verification);
     if (!verification.verified) {
       appendRunOutput("» verification failed — not running (see the Problems tab)\n");

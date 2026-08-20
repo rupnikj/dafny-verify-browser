@@ -200,11 +200,11 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   // Run: verify → compile to JS → execute Main in a throwaway worker.
   await pickExample(page, "fastfib");
   await page.click("#run");
-  await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
-  const runText = await page.locator("#run-output").textContent();
-  if (!runText.includes("Fib(40) = 102334155")) {
-    throw new Error("run output missing Fib(40): " + runText.slice(-400));
-  }
+  // The summary turns green after the VERIFY phase; the run itself finishes
+  // later (compile + execute) — wait for the terminal output marker.
+  await page.waitForFunction(
+    () => document.querySelector("#run-output")?.textContent.includes("Fib(40) = 102334155"),
+    undefined, { timeout: BOOT_TIMEOUT });
   // The JS tab shows the compiled program (runtime stripped, specs erased) in
   // a CodeMirror; it virtualizes long documents, so assert on the data hook
   // plus one rendered highlight.
@@ -270,6 +270,19 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
   await page.click("#smt-readable");
   await page.waitForFunction(() => window.__smtText?.includes("$generated"),
     undefined, { timeout: 120000 });
+  // Isolated assertions: one obligation per assert — the picker multiplies.
+  await page.click("#smt-isolate");
+  await page.waitForFunction(
+    () => document.querySelectorAll("#smt-obligation option").length > 10,
+    undefined, { timeout: BOOT_TIMEOUT });
+  const isolatedLabel = await page.locator("#smt-obligation option").first().textContent();
+  if (!isolatedLabel.includes("rlimit")) {
+    throw new Error("obligation label missing rlimit cost: " + isolatedLabel);
+  }
+  await page.click("#smt-isolate");
+  await page.waitForFunction(
+    () => document.querySelectorAll("#smt-obligation option").length < 10,
+    undefined, { timeout: BOOT_TIMEOUT });
   // Share: the permalink reopens the exact program in a fresh page load.
   await page.click("#share-menu-button");
   await page.click("#share");
@@ -418,11 +431,9 @@ if (withSingleFile) {
     // Run works from the inline payloads too (bignumber-src is embedded).
     await pickExample(page, "fastfib");
     await page.click("#run");
-    await page.waitForSelector(".result-summary.is-success", { timeout: BOOT_TIMEOUT });
-    const runText = await page.locator("#run-output").textContent();
-    if (!runText.includes("Fib(40) = 102334155")) {
-      throw new Error("single-file run output missing Fib(40): " + runText.slice(-400));
-    }
+    await page.waitForFunction(
+      () => document.querySelector("#run-output")?.textContent.includes("Fib(40) = 102334155"),
+      undefined, { timeout: BOOT_TIMEOUT });
     if (requests.length) {
       throw new Error("unexpected network requests: " + requests.slice(0, 5).join(", "));
     }
@@ -444,6 +455,19 @@ await gate("anatomy: the pipeline essay computes all stages live", async page =>
   if (!stages.boogie.includes("implementation") || !stages.smt.includes("(push 1)") ||
       !stages.smt.includes("unsat") || !stages.verdict.includes("verified")) {
     throw new Error("anatomy stages incomplete");
+  }
+  // A failing program reveals the counterexample chapter.
+  await page.click("#stage-source .cm-content");
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type("method Bad(x: int) returns (y: int)\n  ensures y > x {\n  y := x;\n}");
+  await page.click("#analyze");
+  await page.waitForFunction(() => document.querySelector("#status")?.textContent === "done",
+    undefined, { timeout: BOOT_TIMEOUT });
+  const modelVisible = await page.evaluate(() =>
+    !document.querySelector("#model-section").hidden &&
+    document.querySelector("#stage-cex").textContent.length > 0);
+  if (!modelVisible) {
+    throw new Error("counterexample chapter did not appear for a failing program");
   }
 });
 

@@ -195,7 +195,7 @@ async function start() {
   const exports = await runtime.getAssemblyExports(config.mainAssemblyName);
 
   self.addEventListener("message", async event => {
-    const { id, operation, source, timeLimitSeconds, counterexamples, readableNames } = event.data;
+    const { id, operation, source, timeLimitSeconds, counterexamples, readableNames, isolateAssertions } = event.data;
     try {
       let json;
       switch (operation) {
@@ -203,9 +203,9 @@ async function start() {
           json = await exports.DafnyBrowser.BrowserApi.Parse(source);
           break;
         case "verify":
-          json = counterexamples || readableNames
+          json = counterexamples || readableNames || isolateAssertions
             ? await exports.DafnyBrowser.BrowserApi.VerifyFull(
-                source, timeLimitSeconds || 0, !!counterexamples, !!readableNames)
+                source, timeLimitSeconds || 0, !!counterexamples, !!readableNames, !!isolateAssertions)
             : timeLimitSeconds
               ? await exports.DafnyBrowser.BrowserApi.VerifyWithLimit(source, timeLimitSeconds)
               : await exports.DafnyBrowser.BrowserApi.Verify(source);

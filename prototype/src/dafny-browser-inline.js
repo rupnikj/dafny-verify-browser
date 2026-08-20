@@ -109,8 +109,9 @@ export async function createDafny(options = {}) {
       const limit = verifyOptions.timeLimitSeconds ?? 0;
       const wantCounterexamples = verifyOptions.counterexamples === true;
       const readableNames = verifyOptions.readableNames === true;
-      const json = wantCounterexamples || readableNames
-        ? await api.VerifyFull(source, limit, wantCounterexamples, readableNames)
+      const isolateAssertions = verifyOptions.isolateAssertions === true;
+      const json = wantCounterexamples || readableNames || isolateAssertions
+        ? await api.VerifyFull(source, limit, wantCounterexamples, readableNames, isolateAssertions)
         : limit
           ? await api.VerifyWithLimit(source, limit)
           : await api.Verify(source);

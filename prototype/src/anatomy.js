@@ -122,7 +122,8 @@ analyzeButton.addEventListener("click", async () => {
     await ready;
     const dafny = await ensureDafny();
     status.textContent = "verifying…";
-    const result = await dafny.verify(currentProgram(), { timeLimitSeconds: 0, readableNames: true });
+    const result = await dafny.verify(currentProgram(),
+      { timeLimitSeconds: 0, readableNames: true, counterexamples: true });
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
 
@@ -151,6 +152,29 @@ analyzeButton.addEventListener("click", async () => {
       `all computed in this browser tab`;
     stageVerdict.append(detail);
     stageVerdict.parentElement.classList.remove("pending");
+
+    // Failing programs get the counterexample chapter: the raw model and
+    // Dafny's source-level interpretation of it.
+    const modelSection = document.querySelector("#model-section");
+    if (!result.verified) {
+      const modelEntry = (entries ?? []).find(entry =>
+        entry.kind === "exchange" && entry.input.trim() === "(get-model)");
+      const states = (result.diagnostics ?? [])
+        .flatMap(diagnostic => diagnostic.counterexample ?? []);
+      if (modelEntry || states.length > 0) {
+        modelSection.hidden = false;
+        showCode(document.querySelector("#stage-model"), "model", smtLanguage,
+          modelEntry ? capLines(modelEntry.output.trim(), 46) : ";; no model in the transcript");
+        document.querySelector("#stage-cex").textContent = states.length > 0
+          ? states.map(state =>
+              `${state.name}${state.line ? " (line " + state.line + ")" : ""}:\n  ${state.assumption}`).join("\n")
+          : "no source-level interpretation available for this failure";
+      } else {
+        modelSection.hidden = true;
+      }
+    } else {
+      modelSection.hidden = true;
+    }
 
     analyzedOnce = true;
     analyzeButton.textContent = "Analyze";

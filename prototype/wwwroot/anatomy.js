@@ -17285,7 +17285,10 @@ analyzeButton.addEventListener("click", async () => {
     await ready;
     const dafny = await ensureDafny();
     status.textContent = "verifying\u2026";
-    const result = await dafny.verify(currentProgram(), { timeLimitSeconds: 0, readableNames: true });
+    const result = await dafny.verify(
+      currentProgram(),
+      { timeLimitSeconds: 0, readableNames: true, counterexamples: true }
+    );
     const boogieText = await dafny.getLastBoogie();
     const entries = await dafny.getLastSmtTranscript();
     const boogieShown = boogieText ? capLines(firstImplementation(boogieText), 60) : "// no translation recorded (does the program parse?)";
@@ -17303,6 +17306,26 @@ analyzeButton.addEventListener("click", async () => {
     detail.textContent = `stage: ${result.stage} \u2022 ${result.smtExchangeCount} SMT exchanges \u2022 all computed in this browser tab`;
     stageVerdict.append(detail);
     stageVerdict.parentElement.classList.remove("pending");
+    const modelSection = document.querySelector("#model-section");
+    if (!result.verified) {
+      const modelEntry = (entries ?? []).find((entry) => entry.kind === "exchange" && entry.input.trim() === "(get-model)");
+      const states = (result.diagnostics ?? []).flatMap((diagnostic) => diagnostic.counterexample ?? []);
+      if (modelEntry || states.length > 0) {
+        modelSection.hidden = false;
+        showCode(
+          document.querySelector("#stage-model"),
+          "model",
+          smtLanguage,
+          modelEntry ? capLines(modelEntry.output.trim(), 46) : ";; no model in the transcript"
+        );
+        document.querySelector("#stage-cex").textContent = states.length > 0 ? states.map((state) => `${state.name}${state.line ? " (line " + state.line + ")" : ""}:
+  ${state.assumption}`).join("\n") : "no source-level interpretation available for this failure";
+      } else {
+        modelSection.hidden = true;
+      }
+    } else {
+      modelSection.hidden = true;
+    }
     analyzedOnce = true;
     analyzeButton.textContent = "Analyze";
     for (const stage of [stageBoogie, stageSmt, stageVerdict]) {

@@ -229,6 +229,10 @@
               <label class="sr-only" for="smt-obligation">Proof obligation</label>
               <select id="smt-obligation" hidden></select>
               <label class="readable-toggle"
+                title="One proof obligation per assertion (dafny verify --isolate-assertions): see which claim costs what. Exploration mode — more, smaller queries.">
+                <input type="checkbox" id="smt-isolate"> isolate assertions
+              </label>
+              <label class="readable-toggle"
                 title="This pipeline resets the solver per obligation, so every obligation re-sends the options and the Dafny prelude before its query. Hidden by default; uncheck to see the full exchange.">
                 <input type="checkbox" id="smt-hide-prelude" checked> hide prelude
               </label>

@@ -53,14 +53,17 @@ public static partial class BrowserApi {
   // _module.__default.Abs) instead of $generated@@N. Exploration-only: it
   // changes the SMT bytes, so the fidelity-guarded default keeps
   // normalization on, exactly like the native CLI.
+  // isolateAssertions maps to `dafny verify --isolate-assertions`
+  // (VcsSplitOnEveryAssert): one proof obligation per assertion instead of
+  // one per method — exploration mode, like readableNames.
   [JSExport]
   public static Task<string> VerifyFull(string source, int timeLimitSeconds, bool extractCounterexamples,
-    bool readableNames) {
-    return VerifyCore(source, timeLimitSeconds, extractCounterexamples, readableNames);
+    bool readableNames, bool isolateAssertions) {
+    return VerifyCore(source, timeLimitSeconds, extractCounterexamples, readableNames, isolateAssertions);
   }
 
   private static async Task<string> VerifyCore(string source, int timeLimitSeconds,
-    bool extractCounterexamples = false, bool readableNames = false) {
+    bool extractCounterexamples = false, bool readableNames = false, bool isolateAssertions = false) {
     await PipelineLock.WaitAsync();
     lastBoogieText = "";
     var transcript = new SmtTranscriptRecorder();
@@ -75,6 +78,9 @@ public static partial class BrowserApi {
       }
       if (readableNames) {
         options.NormalizeNames = false;
+      }
+      if (isolateAssertions) {
+        options.VcsSplitOnEveryAssert = true;
       }
       if (timeLimitSeconds > 0) {
         options.TimeLimit = (uint)timeLimitSeconds;
