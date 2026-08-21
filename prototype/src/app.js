@@ -1332,7 +1332,7 @@ function renderSmtSlice() {
     const formulaText = formatVcReading(reading,
       { normalized: !!obligation?.vcInput?.includes("$generated") });
     window.__vcText = formulaText;
-    smtNote.textContent = "formula view — notation only, every hypothesis kept";
+    smtNote.textContent = "";
     smtEditor.dispatch({
       changes: { from: 0, to: smtEditor.state.doc.length, insert: formulaText },
       effects: closeHoverTooltips

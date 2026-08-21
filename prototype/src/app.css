@@ -654,13 +654,13 @@ body.tutorial-on .panel {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 4px 10px;
   padding: 6px 10px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-soft);
 }
-.js-toolbar-note { color: var(--muted-soft); font-size: 10px; }
+.js-toolbar-note { color: var(--muted-soft); font-size: 10px; margin-left: auto; }
 .js-toolbar button {
   font: 11px/1 inherit;
   color: var(--text);
