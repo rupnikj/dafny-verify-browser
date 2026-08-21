@@ -1174,11 +1174,15 @@ smtIsolate.addEventListener("change", () => {
 });
 smtHidePrelude.addEventListener("change", () => renderSmtSlice());
 
+let smtSelectionRestore = null;
 smtReadable.addEventListener("change", () => {
   if (running || runInFlight) {
     smtReadable.checked = !smtReadable.checked;
     return;
   }
+  // Name normalization changes the SMT bytes, so a re-verify is required —
+  // but the obligation list is unchanged, so the selection survives it.
+  smtSelectionRestore = smtObligationSelect.value;
   // Quiet re-verify (live-style: no panel switch); the fresh transcript and
   // Boogie program re-render through the usual dirty flags.
   runVerification({ live: true });
@@ -1302,6 +1306,11 @@ function jumpEditorToObligation(obligationName) {
 function renderSmtSlice() {
   if (!smtSections || !smtEditor) return;
   const choice = smtObligationSelect.value;
+  // Toggle applicability: the formula view needs a single obligation, and
+  // "hide prelude" only affects the raw view of a single obligation.
+  const single = choice !== "all" && choice !== "preamble";
+  smtFormula.disabled = !single;
+  smtHidePrelude.disabled = !single || smtFormula.checked;
   let parts, label;
   if (choice === "preamble") {
     parts = smtSections.preamble;
@@ -1404,8 +1413,15 @@ async function renderSmtTranscript() {
     allOption.textContent = "everything (" + smtSections.totalExchanges + " exchanges)";
     smtObligationSelect.append(allOption);
     smtObligationSelect.hidden = false;
+    const restore = smtSelectionRestore;
+    smtSelectionRestore = null;
+    const restoreValid = restore != null &&
+      (restore === "all" || restore === "preamble"
+        ? [...smtObligationSelect.options].some(option => option.value === restore)
+        : Number(restore) < smtSections.obligations.length);
     const cursorIndex = obligationIndexForCursor();
-    smtObligationSelect.value = cursorIndex != null ? String(cursorIndex)
+    smtObligationSelect.value = restoreValid ? restore
+      : cursorIndex != null ? String(cursorIndex)
       : smtSections.obligations.length > 0 ? "0" : "all";
     if (!smtEditor) {
       smtOutput.textContent = "";

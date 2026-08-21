@@ -284,13 +284,34 @@ await gate("demo: threaded tier verifies Abs and rejects Bad", async page => {
     () => document.querySelector("#cursor-position")?.textContent.startsWith("Ln 3"),
     undefined, { timeout: 5000 });
   // Readable-names mode: a quiet re-verify without name normalization puts
-  // real Dafny identifiers in the transcript.
+  // real Dafny identifiers in the transcript. The obligation list is
+  // unchanged, so the selection must survive the re-verify.
+  await page.selectOption("#smt-obligation", "1");
+  // Park the editor cursor on line 1 (a comment — maps to no obligation) so
+  // the check below proves the picker restore, not the cursor-follow.
+  await page.click("#editor .cm-line");
   await page.click("#smt-readable");
   await page.waitForFunction(() => window.__smtText && !window.__smtText.includes("$generated"),
     undefined, { timeout: 120000 });
+  const keptSelection = await page.evaluate(() => document.querySelector("#smt-obligation").value);
+  if (keptSelection !== "1") {
+    throw new Error("readable-names re-verify reset the obligation selection to " + keptSelection);
+  }
   await page.click("#smt-readable");
   await page.waitForFunction(() => window.__smtText?.includes("$generated"),
     undefined, { timeout: 120000 });
+  await page.selectOption("#smt-obligation", "0");
+  // Toggle applicability: on "everything" the formula view and hide-prelude
+  // toggles disable (they apply to a single obligation's view).
+  await page.selectOption("#smt-obligation", "all");
+  const disabledState = await page.evaluate(() => [
+    document.querySelector("#smt-formula").disabled,
+    document.querySelector("#smt-hide-prelude").disabled
+  ]);
+  if (!disabledState[0] || !disabledState[1]) {
+    throw new Error("toggles not disabled on 'everything': " + disabledState);
+  }
+  await page.selectOption("#smt-obligation", "0");
   // Isolated assertions: one obligation per assert — the picker multiplies.
   await page.click("#smt-isolate");
   await page.waitForFunction(
